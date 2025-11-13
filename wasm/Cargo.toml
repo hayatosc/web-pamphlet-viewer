@@ -11,30 +11,30 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 
 [dependencies]
-wasm-bindgen = "0.2"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = ["console"] }
+wasm-bindgen = "0.2.95"
+js-sys = "0.3.72"
+web-sys = { version = "0.3.72", features = ["console"] }
 
 # Image processing
-image = { version = "0.24", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "0.25.5", default-features = false, features = ["png", "jpeg", "webp"] }
 
 # Hashing
-sha2 = "0.10"
-hex = "0.4"
+sha2 = "0.10.8"
+hex = "0.4.3"
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde-wasm-bindgen = "0.6"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.132"
+serde-wasm-bindgen = "0.6.5"
 
 # Error handling
-console_error_panic_hook = { version = "0.1", optional = true }
+console_error_panic_hook = { version = "0.1.7", optional = true }
 
 # Memory optimization
-wee_alloc = { version = "0.4", optional = true }
+wee_alloc = { version = "0.4.5", optional = true }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test = "0.3.45"
 
 [profile.release]
 # Optimize for size
