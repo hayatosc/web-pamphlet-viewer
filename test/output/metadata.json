@@ -1,0 +1,28 @@
+{
+  "pages": [
+    {
+      "height": 512,
+      "page": 0,
+      "tiles": [
+        {
+          "hash": "24fb4e68e9f2aae3a7844ee827d9637f5a6a2088f197602b8cdf4b45ff859b1f",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "hash": "f708b7677d367ca3480ec5ad32ca856f3ad73c6623628ef99d562d7a9ac44c3a",
+          "x": 1,
+          "y": 0
+        },
+        {
+          "hash": "24318fd6ced0ad5bb11f486964c717986c7577fd22ee71250f6e92cefed3fdeb",
+          "x": 0,
+          "y": 1
+        }
+      ],
+      "width": 512
+    }
+  ],
+  "tile_size": 256,
+  "version": 1763046527653
+}

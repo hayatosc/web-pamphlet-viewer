@@ -131,7 +131,7 @@ fn crop_and_pad(
 }
 
 /// 画像をWebP形式にエンコード
-fn encode_webp(img: &DynamicImage, quality: f32) -> Result<Vec<u8>, String> {
+fn encode_webp(img: &DynamicImage, _quality: f32) -> Result<Vec<u8>, String> {
     let mut buffer = Cursor::new(Vec::new());
 
     // WebPエンコーダを使用

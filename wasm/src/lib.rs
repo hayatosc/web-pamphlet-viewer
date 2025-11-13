@@ -22,9 +22,9 @@ pub fn init() {
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsTileInfo {
-    pub x: u32,
-    pub y: u32,
-    pub hash: String,
+    x: u32,
+    y: u32,
+    hash: String,
 }
 
 #[wasm_bindgen]
@@ -83,7 +83,7 @@ impl JsTileResult {
                     y: tile.y,
                     hash: tile.hash.clone(),
                 };
-                JsValue::from_serde(&js_tile).unwrap()
+                serde_wasm_bindgen::to_value(&js_tile).unwrap()
             })
             .collect()
     }
