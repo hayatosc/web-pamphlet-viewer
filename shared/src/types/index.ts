@@ -5,4 +5,3 @@
  */
 
 export * from './wasm.js';
-export * from './metadata.js';
