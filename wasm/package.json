@@ -16,8 +16,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.17.9",
+    "@vitest/ui": "^2.1.8",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "@vitest/ui": "^2.1.8"
+    "vitest": "^2.1.8"
   }
 }
