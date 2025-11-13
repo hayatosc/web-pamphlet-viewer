@@ -1,0 +1,16 @@
+# WASM build outputs
+pkg/
+target/
+
+# Node modules
+node_modules/
+
+# Lock files
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

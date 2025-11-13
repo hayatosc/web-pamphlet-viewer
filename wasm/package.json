@@ -1,0 +1,13 @@
+{
+  "name": "wasm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg",
+    "build:release": "wasm-pack build --release --target web --out-dir pkg",
+    "test": "cargo test"
+  },
+  "devDependencies": {
+    "wasm-pack": "^0.12.0"
+  }
+}
