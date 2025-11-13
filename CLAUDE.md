@@ -63,9 +63,36 @@ Workers
 
 ### なぜこの構成か
 
-- **署名付きURLの問題回避**: R2の署名付きURLをそのまま配布すると、ブラウザキャッシュが効きにくく、URLが漏洩するとセキュリティリスクが生じる
-- **エッジキャッシュの最大活用**: Workers Cache APIを使うことで、Cloudflareエッジネットワークでタイルをキャッシュ。世界中の閲覧者に低レイテンシで配信
-- **バージョニング方式**: metadata.versionをキャッシュキーに含めることで、再アップロード時に古いキャッシュを即座に無効化（cacheキーが変わる）
+#### 署名付きURLの問題とキャッシュ可能な設計
+
+**R2署名付きURLの課題:**
+
+1. **キャッシュ不可**: R2の`presignedUrl`は、URL自体に有効期限やクエリパラメータ（署名）が含まれるため、リクエストごとにURLが異なる
+   - キャッシュは「同一URL」が前提 → 署名付きURLは毎回異なるためキャッシュヒットしない
+   - 結果: 毎回R2オリジンまでアクセスが発生（レイテンシ増、コスト増）
+
+2. **セキュリティリスク**: 署名付きURLが漏洩すると、有効期限内は誰でもアクセス可能
+
+3. **パフォーマンス**: キャッシュされないため、4KB程度の小さな画像でも800ms程度のレイテンシが発生する事例あり
+
+**本システムの解決策:**
+
+- **Workers内で署名検証 + キャッシュ可能なURLを提供**
+  - クライアントには「署名が含まれない、同一のURL」を配布（例: `/pamphlet/{id}/page/{p}/tile/{x}/{y}`）
+  - Workers側で認証・認可を実施（Cookie/JWT、または閲覧権限チェック）
+  - Workers が R2 から取得したレスポンスを Cache API に保存
+  - 2回目以降はエッジキャッシュからHIT → レイテンシ30ms以下に改善
+
+- **エッジキャッシュの最大活用**:
+  - Cloudflareエッジネットワーク（330都市以上）でタイルをキャッシュ
+  - 世界中の閲覧者に低レイテンシで配信
+  - R2へのリクエスト数削減 → コスト最適化
+
+- **バージョニング方式**:
+  - metadata.versionをキャッシュキーに含めることで、再アップロード時に古いキャッシュを即座に無効化（cacheキーが変わる）
+  - Purge API不要、実装がシンプル
+
+**参考**: Cloudflare Meetup 2023の「キャッシュ可能な署名付きURL」パターン（Oliver氏）に基づく設計
 
 ---
 
@@ -216,16 +243,48 @@ packages:
    - metadata.versionをインクリメント
    - レスポンス: `{ version }`
 
-**認証戦略**
+**認証戦略（キャッシュとの両立）**
 
 - アップロード: JWT（Authorization: Bearer token）またはCookie（httpOnly、secure）
-- タイル取得:
-  - **オプションA（推奨）**: 認証不要 + Workers内でCache API活用（高速配信）
-    - 閲覧権限はmetadata取得時にチェック（閲覧可能なIDリストをKVで管理）
-    - タイルURLは推測しにくいID（UUID）を使用
-  - **オプションB**: 認証必須
-    - タイル取得時にJWTチェック
-    - ただしAuthorizationヘッダ付きレスポンスはCDNキャッシュされにくいため、内部で認証後に公開レスポンスを生成する工夫が必要
+
+- タイル取得の認証パターン:
+
+  - **パターンA（推奨）: metadata認証 + タイルは公開キャッシュ**
+    - metadata取得時にのみ認証（Cookie/JWT）
+    - 閲覧権限チェック: KVに `access:{pamphletId}` → `[user_id_list]` を保存
+    - 認証成功後、クライアントは同一URLでタイル取得可能
+    - タイルURLは推測困難なID（UUID）を使用してセキュリティ確保
+    - メリット: 完全なキャッシュ活用、最高のパフォーマンス
+
+  - **パターンB: タイルURLに一時トークン埋め込み**
+    - metadata取得時に短期トークン（例: 1時間有効のJWT）を発行
+    - タイルURL: `/pamphlet/{id}/page/{p}/tile/{x}/{y}?token={jwt}`
+    - Workers側でトークン検証後、**キャッシュキーから`token`を除外**
+    - キャッシュキー: `pamphlet:{id}:p{p}:x{x}:y{y}:v{ver}` （tokenパラメータ含まない）
+    - Cache API操作:
+      ```typescript
+      // tokenを検証した後、キャッシュキーは同一にする
+      const cacheKey = new Request(
+        `https://dummy/${id}/${page}/${x}/${y}/${version}`
+      );
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+      // ... R2取得 ...
+      await cache.put(cacheKey, response.clone());
+      ```
+    - メリット: セキュリティとキャッシュの両立
+    - デメリット: トークン検証のオーバーヘッド（~1ms）
+
+  - **パターンC（非推奨）: 認証ヘッダ必須**
+    - 毎回AuthorizationヘッダでJWTチェック
+    - ⚠️ 問題: `Vary: Authorization` ヘッダが必要 → CDNキャッシュが効かない
+    - 結果: 署名付きURLと同じ問題が発生
+    - 回避不可: キャッシュを諦めるか、パターンA/Bを採用
+
+**推奨アプローチ:**
+- 社内限定・機密性の低いコンテンツ: **パターンA**
+- 機密性の高いコンテンツ: **パターンB**（トークン期限を短く設定）
+- パターンCは避ける（キャッシュメリットが失われる）
 
 **キャッシュ無効化戦略**
 
@@ -480,6 +539,31 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 - **metadata**: `Cache-Control: private, max-age=60`
   - 頻繁に変わる可能性があるため短いTTL
 
+### 署名付きURLとの比較
+
+| 方式 | キャッシュ | レイテンシ | セキュリティ | 実装複雑度 |
+|------|-----------|-----------|-------------|----------|
+| **R2署名付きURL** | ❌ 不可<br>（URLが毎回異なる） | 🐢 800ms+<br>（常にR2アクセス） | ⚠️ URL漏洩リスク<br>（有効期限内は誰でも） | ⭕ シンプル<br>（R2のAPIのみ） |
+| **Workers + Cache API<br>（本システム）** | ✅ 可能<br>（同一URL） | ⚡ 30ms以下<br>（エッジキャッシュ） | ✅ Workers認証<br>（Cookie/JWT検証） | 🔶 中程度<br>（Workers実装必要） |
+
+### パフォーマンス期待値
+
+**キャッシュミス時（初回アクセス）:**
+- Workers実行: ~5ms
+- R2取得: ~50-200ms（リージョンによる）
+- Cache API書き込み: ~10ms
+- **合計: 65-215ms**
+
+**キャッシュヒット時（2回目以降）:**
+- Workers実行: ~5ms
+- Cache API読み込み: ~5-20ms
+- **合計: 10-25ms**（署名付きURLの約30倍高速）
+
+**キャッシュヒット率目標: 95%以上**
+- タイルは静的コンテンツ
+- 同一パンフレットは複数ユーザーが閲覧する想定
+- 結果: R2へのリクエスト数を1/20に削減可能
+
 ---
 
 ## セキュリティ・認証
@@ -666,10 +750,25 @@ jobs:
 
 ### Workers
 
-- **Cache APIの制約**
+- **Cache APIの制約と実装ポイント**
   - レスポンスサイズ: 最大512MB（タイル単位では問題なし）
   - `cache.put()` はメモリでレスポンスをバッファリング → 大量同時実行時はメモリ注意
-  - キャッシュキーは完全一致、クエリパラメータも含まれる（今回はパスのみ）
+  - **キャッシュキーは完全一致**が必須:
+    - URLのクエリパラメータも含まれる
+    - 認証トークンをクエリに含める場合、**カスタムキャッシュキー**を使用
+    - 例: `new Request('https://dummy/pamphlet/abc/tile/0/0')` をキーにして `cache.match()` / `cache.put()`
+  - **キャッシュ可能な署名付きURL実装のコツ**:
+    - リクエストURL（クライアントから）とキャッシュキー（Workers内部）を分離
+    - クライアント: `/tile?token=xyz` → Workers: キャッシュキー `/tile` （token除外）
+    - 実装例:
+      ```typescript
+      const url = new URL(request.url);
+      const token = url.searchParams.get('token'); // 認証用
+      // 認証検証...
+      url.searchParams.delete('token'); // キャッシュキーからは除外
+      const cacheKey = new Request(url.toString());
+      const cached = await caches.default.match(cacheKey);
+      ```
 
 - **R2バインディング**
   - `R2_BUCKET.get(key)` はReadableStreamを返す
@@ -766,6 +865,8 @@ jobs:
 
 ## 参考リソース
 
+### 公式ドキュメント
+
 - [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
 - [Hono Web Framework](https://hono.dev/)
 - [wasm-bindgen Guide](https://rustwasm.github.io/wasm-bindgen/)
@@ -773,6 +874,13 @@ jobs:
 - [Cache API (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/Cache)
 - [R2 Documentation](https://developers.cloudflare.com/r2/)
 - [Workers KV](https://developers.cloudflare.com/kv/)
+
+### キャッシュ可能な署名付きURL関連
+
+- [キャッシュ可能な署名付きURLを考えてみる - Zenn](https://zenn.dev/oliver/articles/cloudflare-meetup-2023-10-06) - Oliver氏による実装パターン解説
+- [Cacheable Presigned URL with Cloudflare Workers - Speaker Deck](https://speakerdeck.com/oliver_diary/cacheable-presigned-url-with-cloudflare-workers) - 上記記事のスライド版
+- [Cloudflare R2の画像をCache APIでキャッシュして返すメモ - Zenn](https://zenn.dev/syumai/scraps/d3468205fee0f0) - パフォーマンス改善事例（800ms → 30ms）
+- [Cloudflare画像配信パターン - Zenn](https://zenn.dev/yusukebe/articles/7cad4c909f1a60) - R2 + Workers の配信パターン
 
 ---
 
