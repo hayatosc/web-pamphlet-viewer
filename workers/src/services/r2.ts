@@ -5,15 +5,13 @@
 import type { Env } from '../types/bindings';
 
 /**
- * Generate R2 key for a tile
+ * Generate R2 key for a tile (hash-based)
  * @param pamphletId Pamphlet ID
- * @param page Page number
- * @param x Tile X coordinate
- * @param y Tile Y coordinate
+ * @param hash Tile SHA256 hash
  * @returns R2 object key
  */
-export function getTileKey(pamphletId: string, page: number, x: number, y: number): string {
-  return `pamphlets/${pamphletId}/page-${page}/tile-${x}-${y}.webp`;
+export function getTileKey(pamphletId: string, hash: string): string {
+  return `pamphlets/${pamphletId}/tiles/${hash}.webp`;
 }
 
 /**
@@ -26,44 +24,36 @@ export function getMetadataKey(pamphletId: string): string {
 }
 
 /**
- * Get a tile from R2
+ * Get a tile from R2 (hash-based)
  * @param env Environment bindings
  * @param pamphletId Pamphlet ID
- * @param page Page number
- * @param x Tile X coordinate
- * @param y Tile Y coordinate
+ * @param hash Tile SHA256 hash
  * @returns R2 object or null if not found
  */
 export async function getTile(
   env: Env,
   pamphletId: string,
-  page: number,
-  x: number,
-  y: number
+  hash: string
 ): Promise<R2ObjectBody | null> {
-  const key = getTileKey(pamphletId, page, x, y);
+  const key = getTileKey(pamphletId, hash);
   return await env.R2_BUCKET.get(key);
 }
 
 /**
- * Put a tile into R2
+ * Put a tile into R2 (hash-based)
  * @param env Environment bindings
  * @param pamphletId Pamphlet ID
- * @param page Page number
- * @param x Tile X coordinate
- * @param y Tile Y coordinate
+ * @param hash Tile SHA256 hash
  * @param data Tile data (WebP)
  * @returns R2 object
  */
 export async function putTile(
   env: Env,
   pamphletId: string,
-  page: number,
-  x: number,
-  y: number,
+  hash: string,
   data: Uint8Array | ArrayBuffer | ReadableStream
 ): Promise<R2Object> {
-  const key = getTileKey(pamphletId, page, x, y);
+  const key = getTileKey(pamphletId, hash);
   return await env.R2_BUCKET.put(key, data, {
     httpMetadata: {
       contentType: 'image/webp',

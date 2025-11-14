@@ -1,0 +1,10 @@
+# Local development environment variables
+# Copy this file to .dev.vars and set your actual values
+# .dev.vars is gitignored and should never be committed
+
+# Secret key for HMAC token signing (use a strong random string)
+# Generate with: openssl rand -base64 32
+SECRET_KEY=your-secret-key-here-change-me
+
+# Environment (optional, defaults in wrangler.toml)
+ENVIRONMENT=development

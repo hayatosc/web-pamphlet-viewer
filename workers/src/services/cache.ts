@@ -3,23 +3,19 @@
  */
 
 /**
- * Generate cache key for a tile
+ * Generate cache key for a tile (hash-based)
  * @param pamphletId Pamphlet ID
- * @param page Page number
- * @param x Tile X coordinate
- * @param y Tile Y coordinate
+ * @param hash Tile SHA256 hash
  * @param version Version number (for cache invalidation)
  * @returns Cache key URL
  */
 export function getTileCacheKey(
   pamphletId: string,
-  page: number,
-  x: number,
-  y: number,
+  hash: string,
   version: number
 ): string {
   // Use a dummy URL as cache key - only the path and query params matter
-  return `https://dummy/pamphlet:${pamphletId}:p${page}:x${x}:y${y}:v${version}`;
+  return `https://dummy/pamphlet:${pamphletId}:tile:${hash}:v${version}`;
 }
 
 /**

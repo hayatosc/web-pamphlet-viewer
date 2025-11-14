@@ -14,14 +14,17 @@ import {
   getTileCacheHeaders,
   getMetadataCacheHeaders
 } from '../services/cache';
+import { requireToken } from '../middleware/auth';
+import { generateToken } from '../services/token';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * GET /:id/metadata
  * Get pamphlet metadata from R2
+ * Requires token authentication
  */
-pamphlet.get('/:id/metadata', async (c) => {
+pamphlet.get('/:id/metadata', requireToken, async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -46,26 +49,22 @@ pamphlet.get('/:id/metadata', async (c) => {
 });
 
 /**
- * GET /:id/page/:page/tile/:x/:y
- * Get tile image with Cache API integration
+ * GET /:id/tile/:hash
+ * Get tile image with Cache API integration (hash-based)
+ * Requires token authentication
  */
-pamphlet.get('/:id/page/:page/tile/:x/:y', async (c) => {
+pamphlet.get('/:id/tile/:hash', requireToken, async (c) => {
   const pamphletId = c.req.param('id');
-  const pageStr = c.req.param('page');
-  const xStr = c.req.param('x');
-  const yStr = c.req.param('y');
+  const hash = c.req.param('hash');
 
   // Validate parameters
-  if (!pamphletId || !pageStr || !xStr || !yStr) {
+  if (!pamphletId || !hash) {
     return c.json({ error: 'Missing required parameters' }, 400);
   }
 
-  const page = parseInt(pageStr, 10);
-  const x = parseInt(xStr, 10);
-  const y = parseInt(yStr, 10);
-
-  if (isNaN(page) || isNaN(x) || isNaN(y)) {
-    return c.json({ error: 'Invalid parameters' }, 400);
+  // Validate hash format (SHA256 = 64 hex characters)
+  if (!/^[a-f0-9]{64}$/i.test(hash)) {
+    return c.json({ error: 'Invalid hash format' }, 400);
   }
 
   try {
@@ -76,7 +75,7 @@ pamphlet.get('/:id/page/:page/tile/:x/:y', async (c) => {
     }
 
     // Generate cache key with version
-    const cacheKey = getTileCacheKey(pamphletId, page, x, y, metadata.version);
+    const cacheKey = getTileCacheKey(pamphletId, hash, metadata.version);
 
     // Check Cache API
     const cachedResponse = await getTileFromCache(cacheKey);
@@ -88,7 +87,7 @@ pamphlet.get('/:id/page/:page/tile/:x/:y', async (c) => {
     console.log(`Cache MISS: ${cacheKey}`);
 
     // Get tile from R2
-    const tileObject = await r2Service.getTile(c.env, pamphletId, page, x, y);
+    const tileObject = await r2Service.getTile(c.env, pamphletId, hash);
     if (!tileObject) {
       return c.json({ error: 'Tile not found' }, 404);
     }
@@ -115,8 +114,9 @@ pamphlet.get('/:id/page/:page/tile/:x/:y', async (c) => {
 /**
  * POST /:id/invalidate
  * Invalidate pamphlet cache by updating version in R2
+ * Requires token authentication
  */
-pamphlet.post('/:id/invalidate', async (c) => {
+pamphlet.post('/:id/invalidate', requireToken, async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -145,6 +145,52 @@ pamphlet.post('/:id/invalidate', async (c) => {
     });
   } catch (error) {
     console.error('Error invalidating cache:', error);
+    return c.json({ error: 'Internal server error', message: String(error) }, 500);
+  }
+});
+
+/**
+ * POST /:id/generate-token
+ * Generate signed token for pamphlet access
+ * This endpoint should be protected by additional authentication in production
+ * (e.g., API key, admin auth)
+ */
+pamphlet.post('/:id/generate-token', async (c) => {
+  const pamphletId = c.req.param('id');
+
+  if (!pamphletId) {
+    return c.json({ error: 'Missing pamphlet ID' }, 400);
+  }
+
+  // Optional: Get expiresIn from request body
+  let expiresIn = 3600; // Default: 1 hour
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    if (body.expiresIn && typeof body.expiresIn === 'number') {
+      expiresIn = body.expiresIn;
+    }
+  } catch {
+    // Use default
+  }
+
+  try {
+    // Verify pamphlet exists
+    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
+    if (!metadata) {
+      return c.json({ error: 'Pamphlet not found' }, 404);
+    }
+
+    // Generate token
+    const token = await generateToken(c.env, pamphletId, expiresIn);
+
+    return c.json({
+      pamphletId,
+      token,
+      expiresIn,
+      expiresAt: Date.now() + expiresIn * 1000,
+    });
+  } catch (error) {
+    console.error('Error generating token:', error);
     return c.json({ error: 'Internal server error', message: String(error) }, 500);
   }
 });

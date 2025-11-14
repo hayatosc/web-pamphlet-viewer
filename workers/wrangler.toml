@@ -21,6 +21,11 @@ id = "local-meta-kv"
 [vars]
 ENVIRONMENT = "development"
 
+# Secrets (set via .dev.vars for local dev, wrangler secret for production)
+# SECRET_KEY should be a strong random string for HMAC token signing
+# Local dev: Add "SECRET_KEY=your-secret-key-here" to .dev.vars
+# Production: wrangler secret put SECRET_KEY
+
 # Production environment (uncomment and configure for production deployment)
 # [env.production]
 # [[env.production.r2_buckets]]

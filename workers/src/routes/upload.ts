@@ -96,20 +96,18 @@ async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Vari
     // Skip metadata field
     if (key === 'metadata') continue;
 
-    // Parse tile key: "tile-{page}-{x}-{y}"
-    const match = key.match(/^tile-(\d+)-(\d+)-(\d+)$/);
+    // Parse tile key: "tile-{hash}"
+    const match = key.match(/^tile-([a-f0-9]{64})$/i);
     if (!match || !(value instanceof File)) {
       console.warn(`Skipping invalid tile key: ${key}`);
       continue;
     }
 
-    const page = parseInt(match[1], 10);
-    const x = parseInt(match[2], 10);
-    const y = parseInt(match[3], 10);
+    const hash = match[1];
 
     // Upload tile to R2
     const arrayBuffer = await value.arrayBuffer();
-    uploadPromises.push(r2Service.putTile(c.env, uploadData.id, page, x, y, arrayBuffer));
+    uploadPromises.push(r2Service.putTile(c.env, uploadData.id, hash, arrayBuffer));
   }
 
   // Wait for all uploads to complete
