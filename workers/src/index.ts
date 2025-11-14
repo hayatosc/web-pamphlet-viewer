@@ -9,10 +9,8 @@ import { logger } from 'hono/logger';
 import type { Env, Variables } from './types/bindings';
 
 // Import routers
-import metadata from './routes/metadata';
-import tile from './routes/tile';
+import pamphlet from './routes/pamphlet';
 import upload from './routes/upload';
-import invalidate from './routes/invalidate';
 
 // Create Hono app with type definitions
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -39,9 +37,7 @@ app.get('/', (c) => {
 });
 
 // Mount routers
-app.route('/pamphlet', metadata);
-app.route('/pamphlet', tile);
-app.route('/pamphlet', invalidate);
+app.route('/pamphlet', pamphlet);
 app.route('/', upload);
 
 // 404 handler
