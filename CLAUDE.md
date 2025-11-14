@@ -27,10 +27,10 @@ Rust/WASM（ブラウザ内）
 Workers /upload エンドポイント
   - ZIP展開
   - R2へ書き込み: pamphlets/{id}/page-{n}/tile-{x}-{y}.webp
-  - KVへmetadata保存: meta:{id}
-  - version番号インクリメント（キャッシュ無効化用）
+  - R2へmetadata保存: pamphlets/{id}/metadata.json
+  - version番号（タイムスタンプ）生成（キャッシュ無効化用）
   ↓
-R2 + KV に永続化
+R2 に永続化
 ```
 
 ### データフロー（閲覧時）
@@ -39,13 +39,14 @@ R2 + KV に永続化
 ブラウザ（閲覧者）
   ↓ GET /pamphlet/:id/metadata
 Workers
-  - KVから metadata.json 取得
+  - R2から metadata.json 取得 (pamphlets/{id}/metadata.json)
   ↓ metadata（pages配列、tile_size、version等）を返す
 ブラウザ
   - Canvas初期化
   - viewport計算 → 必要タイル特定
   ↓ GET /pamphlet/:id/page/:p/tile/:x/:y （並列リクエスト）
 Workers
+  - R2から metadata.json 取得してversion番号を確認
   - Cache API チェック（caches.default）
     - キャッシュキー: pamphlet:{id}:p{page}:x{x}:y{y}:v{version}
   - HIT → 即座に返す
@@ -411,7 +412,8 @@ frontend → wasm/pkg (import)
 #### 責務
 
 - R2への読み書き（直接バインディング経由）
-- Workers KVでのmetadata管理
+  - タイル画像の保存・取得
+  - metadata.jsonの保存・取得
 - Cache API（caches.default）を使ったエッジキャッシュ
 - CORS設定
 
@@ -419,7 +421,7 @@ frontend → wasm/pkg (import)
 
 **wrangler.toml 設定**
 - R2バケット: `pamphlet-storage` をバインディング `R2_BUCKET` として設定
-- KV namespace: `pamphlet-metadata` をバインディング `META_KV` として設定
+- KV namespace: 将来的な用途のため予約（現在は未使用）
 
 **主要エンドポイント**
 
@@ -442,12 +444,12 @@ frontend → wasm/pkg (import)
    - 処理:
      - ZIP展開（ZIP形式の場合）
      - R2に各タイルを書き込み: `pamphlets/{id}/page-{n}/tile-{x}-{y}.webp`
-     - metadata.jsonをR2とKVに保存
-     - metadata.versionをインクリメント（timestamp or sequential number）
+     - metadata.jsonをR2に保存: `pamphlets/{id}/metadata.json`
+     - metadata.versionを生成（timestamp）
    - レスポンス: `{ id, version, status: 'ok' }`
 
 3. `GET /pamphlet/:id/metadata`
-   - KVから `meta:{id}` を取得
+   - R2から `pamphlets/{id}/metadata.json` を取得
    - レスポンス: metadata.json（pages配列、tile_size、version、dimensions等）
 
 4. `GET /pamphlet/:id/page/:page/tile/:x/:y`
@@ -465,8 +467,10 @@ frontend → wasm/pkg (import)
    - レスポンス: 画像バイナリ（WebP）
 
 5. `POST /pamphlet/:id/invalidate` (管理用)
-   - metadata.versionをインクリメント
-   - レスポンス: `{ version }`
+   - R2からmetadata.jsonを取得
+   - metadata.versionを更新（新しいtimestamp）
+   - 更新したmetadata.jsonをR2に保存
+   - レスポンス: `{ id, version, status, message }`
 
 **キャッシュ無効化戦略**
 
@@ -707,9 +711,16 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 **アップロード時**
 
 1. Workers `/upload` が完了
-2. `metadata.version` を更新（`Date.now()` or sequential number）
-3. KVに新version保存: `META_KV.put('meta:{id}', JSON.stringify(metadata))`
+2. `metadata.version` を生成（`Date.now()` timestamp）
+3. R2に新metadata保存: `pamphlets/{id}/metadata.json`
 4. 古いキャッシュはversionが異なるため自動的にミス → 新タイルを取得
+
+**手動無効化時（POST /pamphlet/:id/invalidate）**
+
+1. R2から現在のmetadata.jsonを取得
+2. `metadata.version` を更新（新しい`Date.now()` timestamp）
+3. 更新したmetadata.jsonをR2に保存
+4. 次回のタイルリクエスト時、新しいversionでキャッシュキーが生成される
 
 **オプション: 即時削除**
 
@@ -787,21 +798,18 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 4. **workers/ ローカル開発**
    ```bash
    cd workers
-   # wrangler.tomlでR2/KVバインディング設定（local mode）
+   # wrangler.tomlでR2バインディング設定（local mode）
    pnpm dev  # wrangler dev
    # http://localhost:8787 でWorkers実行
    ```
 
-5. **Cloudflare R2/KV作成**
+5. **Cloudflare R2作成**
    ```bash
    # R2バケット作成
    wrangler r2 bucket create pamphlet-storage
 
-   # KV namespace作成
-   wrangler kv:namespace create pamphlet-metadata
-   wrangler kv:namespace create pamphlet-metadata --preview  # dev用
-
-   # wrangler.toml に ID を追記
+   # wrangler.toml のコメントを外して設定
+   # KV namespaceは現在未使用（将来的な拡張のため予約）
    ```
 
 ---
@@ -833,7 +841,7 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 
 ### 本番デプロイ前チェックリスト
 
-- [ ] R2/KVバインディングが本番環境に設定されているか
+- [ ] R2バインディングが本番環境に設定されているか
 - [ ] CORS設定が正しいオリジンに限定されているか
 - [ ] wrangler.toml の `workers_dev = false` に設定
 - [ ] Custom Domain設定（例: `api.pamphlet.example.com`）
@@ -857,11 +865,7 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
   - `R2_BUCKET.get(key)` はReadableStreamを返す
   - `R2_BUCKET.put(key, body, options)` で書き込み
   - アップロード時の並列数を制御（例: Promise.all with chunks of 10）
-
-- **KVの制約**
-  - 値サイズ: 最大25MB（metadata.jsonは十分小さい）
-  - 書き込みは最終的整合性（eventually consistent）
-  - 高頻度読み込みは問題なし
+  - metadata.jsonの読み書きも同じR2を使用（シンプルな設計）
 
 - **CPU時間制限**
   - 無料プラン: 10ms、有料: 50ms（Unboundなら30秒）
