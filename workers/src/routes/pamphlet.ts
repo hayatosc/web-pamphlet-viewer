@@ -5,7 +5,7 @@
 
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
-import * as kvService from '../services/kv';
+import type { Metadata } from 'shared/types/wasm';
 import * as r2Service from '../services/r2';
 import {
   getTileCacheKey,
@@ -19,7 +19,7 @@ const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * GET /:id/metadata
- * Get pamphlet metadata from KV
+ * Get pamphlet metadata from R2
  */
 pamphlet.get('/:id/metadata', async (c) => {
   const pamphletId = c.req.param('id');
@@ -29,8 +29,8 @@ pamphlet.get('/:id/metadata', async (c) => {
   }
 
   try {
-    // Get metadata from KV
-    const metadata = await kvService.getMetadata(c.env, pamphletId);
+    // Get metadata from R2
+    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
 
     if (!metadata) {
       return c.json({ error: 'Pamphlet not found' }, 404);
@@ -69,8 +69,8 @@ pamphlet.get('/:id/page/:page/tile/:x/:y', async (c) => {
   }
 
   try {
-    // Get metadata to retrieve version number
-    const metadata = await kvService.getMetadata(c.env, pamphletId);
+    // Get metadata from R2 to retrieve version number
+    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
     if (!metadata) {
       return c.json({ error: 'Pamphlet not found' }, 404);
     }
@@ -114,7 +114,7 @@ pamphlet.get('/:id/page/:page/tile/:x/:y', async (c) => {
 
 /**
  * POST /:id/invalidate
- * Invalidate pamphlet cache by updating version
+ * Invalidate pamphlet cache by updating version in R2
  */
 pamphlet.post('/:id/invalidate', async (c) => {
   const pamphletId = c.req.param('id');
@@ -124,14 +124,18 @@ pamphlet.post('/:id/invalidate', async (c) => {
   }
 
   try {
-    // Update version in KV (this will invalidate cache)
-    const newVersion = await kvService.updateMetadataVersion(c.env, pamphletId);
-
-    // Also update metadata in R2
-    const metadata = await kvService.getMetadata(c.env, pamphletId);
-    if (metadata) {
-      await r2Service.putMetadata(c.env, pamphletId, metadata);
+    // Get metadata from R2
+    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
+    if (!metadata) {
+      return c.json({ error: 'Pamphlet not found' }, 404);
     }
+
+    // Update version (this will invalidate cache)
+    const newVersion = Date.now();
+    metadata.version = newVersion;
+
+    // Save updated metadata to R2
+    await r2Service.putMetadata(c.env, pamphletId, metadata);
 
     return c.json({
       id: pamphletId,

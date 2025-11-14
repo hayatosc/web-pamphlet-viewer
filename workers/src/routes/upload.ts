@@ -6,7 +6,6 @@
 import { Hono, Context } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import type { Metadata, PageInfo } from 'shared/types/wasm';
-import * as kvService from '../services/kv';
 import * as r2Service from '../services/r2';
 
 const upload = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -62,10 +61,7 @@ async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables
     pages: body.pages,
   };
 
-  // Save metadata to KV
-  await kvService.putMetadata(c.env, body.id, metadata);
-
-  // Optionally save metadata to R2 as well
+  // Save metadata to R2
   await r2Service.putMetadata(c.env, body.id, metadata);
 
   return c.json({
@@ -125,9 +121,6 @@ async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Vari
     tile_size: uploadData.tile_size,
     pages: uploadData.pages,
   };
-
-  // Save metadata to KV
-  await kvService.putMetadata(c.env, uploadData.id, metadata);
 
   // Save metadata to R2
   await r2Service.putMetadata(c.env, uploadData.id, metadata);
