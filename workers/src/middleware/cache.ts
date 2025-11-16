@@ -1,6 +1,6 @@
 /**
  * Cache Middleware
- * Handles Cache API integration for tile responses
+ * Handles Cache API integration for tile and metadata responses
  */
 
 import { Context } from 'hono';
@@ -10,7 +10,65 @@ import {
   getTileFromCache,
   putTileIntoCache,
   getTileCacheHeaders,
+  getMetadataCacheKey,
+  getMetadataFromCache,
+  putMetadataIntoCache,
+  deleteMetadataFromCache,
+  getMetadataCacheHeaders,
 } from '../services/cache';
+
+/**
+ * Metadata cache middleware
+ * Checks Cache API before loading metadata from R2
+ *
+ * Prerequisites:
+ * - pamphletId must be in route params as 'id'
+ *
+ * Usage:
+ * ```
+ * pamphlet.get('/:id/metadata',
+ *   metadataCache,
+ *   loadMetadata,  // Only called on cache miss
+ *   async (c) => {
+ *     const metadata = c.get('metadata');
+ *     return c.json(metadata);
+ *   }
+ * );
+ * ```
+ */
+export async function metadataCache(
+  c: Context<{ Bindings: Env; Variables: Variables }>,
+  next: Function
+) {
+  const pamphletId = c.req.param('id');
+
+  if (!pamphletId) {
+    await next();
+    return;
+  }
+
+  // Generate cache key
+  const cacheKey = getMetadataCacheKey(pamphletId);
+
+  // Check Cache API
+  const cachedResponse = await getMetadataFromCache(cacheKey);
+  if (cachedResponse) {
+    console.log(`Metadata cache HIT: ${cacheKey}`);
+    return cachedResponse;
+  }
+
+  console.log(`Metadata cache MISS: ${cacheKey}`);
+
+  // Execute handler to get response (loadMetadata + handler)
+  await next();
+
+  // After handler execution, cache the response if it's successful
+  const response = c.res;
+  if (response && response.status === 200) {
+    // Store in cache asynchronously (non-blocking)
+    c.executionCtx.waitUntil(putMetadataIntoCache(cacheKey, response.clone()));
+  }
+}
 
 /**
  * Tile cache middleware
@@ -24,7 +82,6 @@ import {
  * Usage:
  * ```
  * pamphlet.get('/:id/tile/:hash',
- *   requireToken,
  *   loadMetadata,
  *   tileCache,
  *   async (c) => {
@@ -72,4 +129,14 @@ export async function tileCache(
     // Store in cache asynchronously (non-blocking)
     c.executionCtx.waitUntil(putTileIntoCache(cacheKey, response.clone()));
   }
+}
+
+/**
+ * Clear metadata cache
+ * Utility function to delete metadata from cache
+ */
+export async function clearMetadataCache(pamphletId: string): Promise<void> {
+  const cacheKey = getMetadataCacheKey(pamphletId);
+  await deleteMetadataFromCache(cacheKey);
+  console.log(`Metadata cache cleared: ${cacheKey}`);
 }

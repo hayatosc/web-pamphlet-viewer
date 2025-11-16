@@ -8,19 +8,20 @@ import type { Env, Variables } from '../types/bindings';
 import * as r2Service from '../services/r2';
 import { getTileCacheHeaders, getMetadataCacheHeaders } from '../services/cache';
 import { loadMetadata } from '../middleware/metadata';
-import { tileCache } from '../middleware/cache';
+import { metadataCache, tileCache, clearMetadataCache } from '../middleware/cache';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * GET /:id/metadata
- * Get pamphlet metadata from R2
+ * Get pamphlet metadata with Cache API integration
  * Public access - no authentication required
  *
  * Middleware stack:
- * - loadMetadata: Loads pamphlet metadata into context
+ * - metadataCache: Checks cache and stores response
+ * - loadMetadata: Loads pamphlet metadata from R2 (only on cache miss)
  */
-pamphlet.get('/:id/metadata', loadMetadata, async (c) => {
+pamphlet.get('/:id/metadata', metadataCache, loadMetadata, async (c) => {
   // Get metadata from context (loaded by loadMetadata middleware)
   const metadata = c.get('metadata');
 
@@ -75,7 +76,7 @@ pamphlet.get('/:id/tile/:hash', loadMetadata, tileCache, async (c) => {
 
 /**
  * POST /:id/invalidate
- * Invalidate pamphlet cache by updating version in R2
+ * Invalidate pamphlet cache by updating version and clearing metadata cache
  * Admin endpoint - should be protected by additional authentication in production
  * (e.g., Cloudflare Access, API key, etc.)
  *
@@ -97,12 +98,15 @@ pamphlet.post('/:id/invalidate', loadMetadata, async (c) => {
       return c.json({ error: 'Pamphlet not found' }, 404);
     }
 
-    // Update version (this will invalidate cache)
+    // Update version (this will invalidate tile cache via new cache keys)
     const newVersion = Date.now();
     metadata.version = newVersion;
 
     // Save updated metadata to R2
     await r2Service.putMetadata(c.env, pamphletId, metadata);
+
+    // Clear metadata cache explicitly (non-blocking)
+    c.executionCtx.waitUntil(clearMetadataCache(pamphletId));
 
     return c.json({
       id: pamphletId,
