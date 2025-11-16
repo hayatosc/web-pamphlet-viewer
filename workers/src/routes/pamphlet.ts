@@ -6,7 +6,6 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import * as r2Service from '../services/r2';
-import { getTileCacheHeaders, getMetadataCacheHeaders } from '../services/cache';
 import { loadMetadata } from '../middleware/metadata';
 import { metadataCache, tileCache, clearMetadataCache } from '../middleware/cache';
 
@@ -25,9 +24,8 @@ pamphlet.get('/:id/metadata', metadataCache, loadMetadata, async (c) => {
   // Get metadata from context (loaded by loadMetadata middleware)
   const metadata = c.get('metadata');
 
-  // Return metadata with cache headers
-  const headers = getMetadataCacheHeaders();
-  return c.json(metadata, 200, headers as Record<string, string>);
+  // Return metadata (cache headers added automatically by metadataCache middleware)
+  return c.json(metadata);
 });
 
 /**
@@ -60,12 +58,11 @@ pamphlet.get('/:id/tile/:hash', loadMetadata, tileCache, async (c) => {
       return c.json({ error: 'Tile not found' }, 404);
     }
 
-    // Return response with cache headers
+    // Return response (cache headers added automatically by tileCache middleware)
     return new Response(tileObject.body, {
       status: 200,
       headers: {
         'Content-Type': 'image/webp',
-        ...getTileCacheHeaders(),
       },
     });
   } catch (error) {

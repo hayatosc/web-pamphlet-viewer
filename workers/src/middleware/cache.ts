@@ -13,11 +13,14 @@ import {
   getMetadataFromCache,
   putMetadataIntoCache,
   deleteMetadataFromCache,
+  getMetadataCacheHeaders,
+  getTileCacheHeaders,
 } from '../services/cache';
 
 /**
  * Metadata cache middleware
  * Checks Cache API before loading metadata from R2
+ * Automatically adds Cache-Control headers to responses
  *
  * Prerequisites:
  * - pamphletId must be in route params as 'id'
@@ -58,9 +61,15 @@ export const metadataCache = createMiddleware<{ Bindings: Env; Variables: Variab
     // Execute handler to get response (loadMetadata + handler)
     await next();
 
-    // After handler execution, cache the response if it's successful
+    // After handler execution, add cache headers and cache the response if it's successful
     const response = c.res;
     if (response && response.status === 200) {
+      // Add cache headers
+      const headers = getMetadataCacheHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        response.headers.set(key, value as string);
+      });
+
       // Store in cache asynchronously (non-blocking)
       c.executionCtx.waitUntil(putMetadataIntoCache(cacheKey, response.clone()));
     }
@@ -70,6 +79,7 @@ export const metadataCache = createMiddleware<{ Bindings: Env; Variables: Variab
 /**
  * Tile cache middleware
  * Checks Cache API before handler execution and stores response after
+ * Automatically adds Cache-Control headers to responses
  *
  * Prerequisites:
  * - pamphletId must be in route params as 'id'
@@ -82,10 +92,10 @@ export const metadataCache = createMiddleware<{ Bindings: Env; Variables: Variab
  *   loadMetadata,
  *   tileCache,
  *   async (c) => {
- *     // Handler returns response with cache headers
+ *     // Handler returns response (cache headers added automatically)
  *     const tile = await getTile(...);
  *     return new Response(tile.body, {
- *       headers: { 'Content-Type': 'image/webp', ...getTileCacheHeaders() }
+ *       headers: { 'Content-Type': 'image/webp' }
  *     });
  *   }
  * );
@@ -118,9 +128,15 @@ export const tileCache = createMiddleware<{ Bindings: Env; Variables: Variables 
     // Execute handler to get response
     await next();
 
-    // After handler execution, cache the response if it's successful
+    // After handler execution, add cache headers and cache the response if it's successful
     const response = c.res;
     if (response && response.status === 200) {
+      // Add cache headers
+      const headers = getTileCacheHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        response.headers.set(key, value as string);
+      });
+
       // Store in cache asynchronously (non-blocking)
       c.executionCtx.waitUntil(putTileIntoCache(cacheKey, response.clone()));
     }
