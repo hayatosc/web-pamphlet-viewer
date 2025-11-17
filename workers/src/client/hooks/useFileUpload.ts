@@ -1,10 +1,8 @@
 import { hc } from 'hono/client';
-import type upload from '../../routes/upload';
+import type { AppType } from '../../index';
 import { uploadResponseSchema } from '../../routes/upload';
 import type { ProcessedPage, Metadata } from '../types';
 import type { z } from 'zod';
-
-type UploadType = typeof upload;
 
 export async function uploadTiles(
   pages: ProcessedPage[],
@@ -53,8 +51,8 @@ export async function uploadTiles(
   }
 
   // アップロード (Hono RPC client with FormData)
-  const client = hc<UploadType>('/admin/upload');
-  const res = await client.index.$post({
+  const client = hc<AppType>('/');
+  const res = await client.admin.upload.$post({
     form: formData,
   });
 
