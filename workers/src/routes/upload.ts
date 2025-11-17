@@ -7,7 +7,7 @@ import { Hono, Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { Env, Variables } from '../types/bindings';
-import type { Metadata, PageInfo } from 'shared/types/wasm';
+import type { Metadata, PageInfo, UploadResponse } from 'shared/types/wasm';
 import * as r2Service from '../services/r2';
 
 const upload = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -36,10 +36,22 @@ const uploadFormSchema = z.object({
 });
 
 /**
+ * Response schema for upload
+ */
+export const uploadResponseSchema = z.object({
+  id: z.string(),
+  version: z.number(),
+  status: z.literal('ok'),
+});
+
+/**
  * POST /
  * Handle upload request (JSON or multipart)
  */
-upload.post('/', zValidator('form', uploadFormSchema), async (c) => {
+upload.post(
+  '/',
+  zValidator('form', uploadFormSchema),
+  async (c) => {
   try {
     const contentType = c.req.header('Content-Type') || '';
 
@@ -80,10 +92,10 @@ async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables
   // Save metadata to R2
   await r2Service.putMetadata(c.env, body.id, metadata);
 
-  return c.json({
+  return c.json<UploadResponse>({
     id: body.id,
     version: metadata.version,
-    status: 'ok',
+    status: 'ok' as const,
   });
 }
 
@@ -150,10 +162,10 @@ async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Vari
   // Save metadata to R2
   await r2Service.putMetadata(c.env, uploadData.id, metadata);
 
-  return c.json({
+  return c.json<UploadResponse>({
     id: uploadData.id,
     version: metadata.version,
-    status: 'ok',
+    status: 'ok' as const,
   });
 }
 

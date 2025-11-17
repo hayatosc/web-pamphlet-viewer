@@ -6,6 +6,7 @@ export type {
   PageInfo,
   Metadata,
   TileMetadata,
+  UploadResponse,
 } from 'shared/types/wasm';
 
 // Import for extension

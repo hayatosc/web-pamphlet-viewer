@@ -1,13 +1,15 @@
 import { hc } from 'hono/client';
 import type { AppType } from '../../index';
+import { uploadResponseSchema } from '../../routes/upload';
 import type { ProcessedPage, Metadata } from '../types';
+import type { z } from 'zod';
 
 export async function uploadTiles(
   pages: ProcessedPage[],
   pamphletId: string,
   tileSize: number,
   onProgress: (progress: number) => void
-): Promise<{ id: string; version: number }> {
+): Promise<z.infer<typeof uploadResponseSchema>> {
   if (pages.length === 0) {
     throw new Error('アップロード可能なページがありません');
   }
@@ -44,18 +46,15 @@ export async function uploadTiles(
   }
 
   // アップロード (Hono RPC client with type-safe form data)
-  // Note: hc<AppType>('/') returns a complex union type that TypeScript
-  // cannot always infer correctly. We use type assertion here as the
-  // actual runtime behavior is correct.
-  const res = await (hc<AppType>('/') as {
-    admin: {
-      upload: {
-        $post: (args: {
-          form: Record<string, string | Blob>;
-        }) => Promise<Response>;
-      };
-    };
-  }).admin.upload.$post({
+  // Note: hc<AppType>() returns unknown due to complex route types from app.route()
+  // We use type assertion here, but ensure type safety through zod schema validation
+  type PostFn = (args: {
+    form: Record<string, string | Blob>;
+  }) => Promise<Response>;
+
+  const client = hc<AppType>('/') as { admin: { upload: { $post: PostFn } } };
+
+  const res = await client.admin.upload.$post({
     form: {
       id: pamphletId,
       metadata: JSON.stringify(metadata),
@@ -68,7 +67,8 @@ export async function uploadTiles(
     throw new Error(`Upload failed: ${res.status} ${errorText}`);
   }
 
-  const result = (await res.json()) as { id: string; version: number };
+  const json = await res.json();
+  const result = uploadResponseSchema.parse(json);
   onProgress(100);
 
   return result;
