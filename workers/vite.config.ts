@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      external: ['/wasm/tile_wasm.js'],
+      external: ['/wasm/tile_wasm.js', 'hono/jsx/jsx-runtime'],
     },
   },
 });
