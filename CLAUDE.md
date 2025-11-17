@@ -21,37 +21,39 @@ InDesignなどのDTP成果物を、高速かつセキュアにWeb上で閲覧で
   ↓ 画像ファイル群（InDesign出力）
 Rust/WASM（ブラウザ内）
   - タイル化（例: 512x512px WebP）
-  - SHA256ハッシュ命名（重複排除）
-  - metadata.json生成
-  ↓ ZIP/タイル群 + metadata
+  - SHA256ハッシュ計算（タイル識別用、64文字の16進数）
+  - metadata.json生成（各タイルの座標とハッシュのマッピング）
+  ↓ タイル群 + metadata（FormData: tile-{hash} フィールド）
 Workers /upload エンドポイント
-  - ZIP展開
-  - R2へ書き込み: pamphlets/{id}/page-{n}/tile-{x}-{y}.webp
-  - KVへmetadata保存: meta:{id}
-  - version番号インクリメント（キャッシュ無効化用）
+  - R2へ書き込み（ハッシュベース）: pamphlets/{id}/tiles/{hash}.webp
+  - R2へmetadata保存: pamphlets/{id}/metadata.json
+  - version番号（タイムスタンプ）生成（キャッシュ無効化用）
   ↓
-R2 + KV に永続化
+R2 に永続化
 ```
 
 ### データフロー（閲覧時）
 
 ```
-ブラウザ（閲覧者）
+ブラウザ（閲覧者）- 公開アクセス、認証不要
   ↓ GET /pamphlet/:id/metadata
 Workers
-  - KVから metadata.json 取得
-  ↓ metadata（pages配列、tile_size、version等）を返す
+  - R2から metadata.json 取得 (pamphlets/{id}/metadata.json)
+  ↓ metadata（pages配列、tile_size、version、各タイルのhash情報）を返す
 ブラウザ
   - Canvas初期化
   - viewport計算 → 必要タイル特定
-  ↓ GET /pamphlet/:id/page/:p/tile/:x/:y （並列リクエスト）
+  - metadataから座標に対応するhashを取得
+  ↓ GET /pamphlet/:id/tile/:hash （並列リクエスト）
 Workers
+  - R2から metadata.json 取得してversion番号を確認
   - Cache API チェック（caches.default）
-    - キャッシュキー: pamphlet:{id}:p{page}:x{x}:y{y}:v{version}
-  - HIT → 即座に返す
+    - キャッシュキー: pamphlet:{id}:tile:{hash}:v{version}
+  - HIT → 即座に返す（エッジキャッシュ、レイテンシ 10-30ms）
   - MISS → R2バインディングで取得
+    - パス: pamphlets/{id}/tiles/{hash}.webp
     - Content-Type: image/webp
-    - Cache-Control: public, max-age=86400
+    - Cache-Control: public, max-age=86400, s-maxage=2592000
     - Cache APIに put（エッジキャッシュ）
   ↓ タイル画像（WebP）
 ブラウザ
@@ -76,7 +78,7 @@ Workers
 **本システムの解決策:**
 
 - **Workers内でキャッシュ可能なURLを提供**
-  - クライアントには「署名が含まれない、同一のURL」を配布（例: `/pamphlet/{id}/page/{p}/tile/{x}/{y}`）
+  - クライアントには「署名が含まれない、同一のURL」を配布（例: `/pamphlet/{id}/tile/{hash}`）
   - Workers が R2 から取得したレスポンスを Cache API に保存
   - 2回目以降はエッジキャッシュからHIT → レイテンシ30ms以下に改善
 
@@ -89,7 +91,26 @@ Workers
   - metadata.versionをキャッシュキーに含めることで、再アップロード時に古いキャッシュを即座に無効化（cacheキーが変わる）
   - Purge API不要、実装がシンプル
 
-**参考**: Cloudflare Meetup 2023の「キャッシュ可能な署名付きURL」パターン（Oliver氏）に基づく設計
+- **ハッシュベースURLによる限定的セキュリティ**:
+  - **ハッシュベースURL**: タイルURLが座標から推測不可能（`/tile/:hash`）
+    - 座標ベース（`/tile/:x/:y`）だと連番でアクセス可能 → ハッシュベースで防止
+    - ただし、metadataは公開されており、全タイルのhash情報が含まれる
+  - **公開アクセス方式**:
+    - 全てのエンドポイント（metadata、tile）は認証不要で公開
+    - 用途: パンフレット、カタログ等の公開コンテンツ配信
+    - 機械的ダウンロードは技術的に防げない（許容する設計）
+  - **オプション: 機械的アクセス対策**:
+    1. **Rate Limiting** (Cloudflare標準機能): 1IPあたり秒間リクエスト数制限（例: 10req/sec）
+    2. **Referrer/Origin チェック**: 特定ドメインからのみアクセス許可（ただし偽装可能）
+    3. **Cloudflare Bot Management** (有料): 機械的アクセス検出・制限、人間のブラウザは許可
+    4. **コンテンツ保護**: 透かし、低解像度版の配布、利用規約による規制
+  - **管理エンドポイント保護**:
+    - `POST /pamphlet/:id/invalidate` はCloudflare Access、API key等で保護推奨
+    - アップロードエンドポイントも同様に保護
+
+**参考**:
+- Cloudflare Meetup 2023の「キャッシュ可能な署名付きURL」パターン（Oliver氏）を参考にキャッシュ設計を最適化
+- 公開コンテンツ配信のため、認証は削除してシンプルな設計に
 
 ---
 
@@ -411,7 +432,8 @@ frontend → wasm/pkg (import)
 #### 責務
 
 - R2への読み書き（直接バインディング経由）
-- Workers KVでのmetadata管理
+  - タイル画像の保存・取得
+  - metadata.jsonの保存・取得
 - Cache API（caches.default）を使ったエッジキャッシュ
 - CORS設定
 
@@ -419,7 +441,7 @@ frontend → wasm/pkg (import)
 
 **wrangler.toml 設定**
 - R2バケット: `pamphlet-storage` をバインディング `R2_BUCKET` として設定
-- KV namespace: `pamphlet-metadata` をバインディング `META_KV` として設定
+- KV namespace: 将来的な用途のため予約（現在は未使用）
 
 **主要エンドポイント**
 
@@ -432,41 +454,46 @@ frontend → wasm/pkg (import)
      - アップロード実行ボタン
    - クライアントサイドJS:
      - WASM呼び出し（`tile_image()`）
-     - ZIP生成（JSZip）
+     - タイルをハッシュごとにFormDataに追加（`tile-{hash}`）
      - `POST /upload` にmultipart送信
      - 並列数制御（例: 6並列）
    - レスポンス: HTML（Hono JSX）
 
 2. `POST /upload` (API)
-   - ペイロード: multipart/form-data（ZIP）またはJSON（タイル配列+metadata）
+   - ペイロード: multipart/form-data（タイル: `tile-{hash}`、metadata: JSON文字列）またはJSON（metadata のみ）
    - 処理:
-     - ZIP展開（ZIP形式の場合）
-     - R2に各タイルを書き込み: `pamphlets/{id}/page-{n}/tile-{x}-{y}.webp`
-     - metadata.jsonをR2とKVに保存
-     - metadata.versionをインクリメント（timestamp or sequential number）
+     - FormDataからハッシュベースのタイルを取得（`tile-{hash}` パターン）
+     - R2に各タイルを書き込み（ハッシュベース）: `pamphlets/{id}/tiles/{hash}.webp`
+     - metadata.jsonをR2に保存: `pamphlets/{id}/metadata.json`
+     - metadata.versionを生成（timestamp）
    - レスポンス: `{ id, version, status: 'ok' }`
 
 3. `GET /pamphlet/:id/metadata`
-   - KVから `meta:{id}` を取得
-   - レスポンス: metadata.json（pages配列、tile_size、version、dimensions等）
+   - **公開アクセス**: 認証不要
+   - R2から `pamphlets/{id}/metadata.json` を取得
+   - レスポンス: metadata.json（pages配列、tile_size、version、各タイルのhash情報等）
+   - Cache-Control: `private, max-age=60`
 
-4. `GET /pamphlet/:id/page/:page/tile/:x/:y`
-   - キャッシュキー生成: `pamphlet:{id}:p{page}:x{x}:y{y}:v{version}`
-     - versionはmetadataから取得
+4. `GET /pamphlet/:id/tile/:hash`
+   - **公開アクセス**: 認証不要
+   - ハッシュ形式検証: 64文字の16進数（SHA256）
+   - キャッシュキー生成: `pamphlet:{id}:tile:{hash}:v{version}`（versionはmetadataから取得）
    - Cache APIチェック（caches.default.match(cacheKey)）
-   - HIT → 即座に返す
+   - HIT → 即座に返す（エッジキャッシュ、10-30ms）
    - MISS:
-     - R2バインディングで取得: `R2_BUCKET.get(tilePath)`
+     - R2バインディングで取得: `R2_BUCKET.get('pamphlets/{id}/tiles/{hash}.webp')`
      - レスポンスヘッダ:
        - `Content-Type: image/webp`
        - `Cache-Control: public, max-age=86400, s-maxage=2592000`
-       - `Surrogate-Key: pamphlet:{id}` （オプション: Purge用）
      - Cache APIに保存: `cache.put(cacheKey, response.clone())`
    - レスポンス: 画像バイナリ（WebP）
 
 5. `POST /pamphlet/:id/invalidate` (管理用)
-   - metadata.versionをインクリメント
-   - レスポンス: `{ version }`
+   - **管理エンドポイント**: Cloudflare Access、API key等で保護推奨
+   - R2からmetadata.jsonを取得
+   - metadata.versionを更新（新しいtimestamp）
+   - 更新したmetadata.jsonをR2に保存
+   - レスポンス: `{ id, version, status, message }`
 
 **キャッシュ無効化戦略**
 
@@ -707,9 +734,16 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 **アップロード時**
 
 1. Workers `/upload` が完了
-2. `metadata.version` を更新（`Date.now()` or sequential number）
-3. KVに新version保存: `META_KV.put('meta:{id}', JSON.stringify(metadata))`
+2. `metadata.version` を生成（`Date.now()` timestamp）
+3. R2に新metadata保存: `pamphlets/{id}/metadata.json`
 4. 古いキャッシュはversionが異なるため自動的にミス → 新タイルを取得
+
+**手動無効化時（POST /pamphlet/:id/invalidate）**
+
+1. R2から現在のmetadata.jsonを取得
+2. `metadata.version` を更新（新しい`Date.now()` timestamp）
+3. 更新したmetadata.jsonをR2に保存
+4. 次回のタイルリクエスト時、新しいversionでキャッシュキーが生成される
 
 **オプション: 即時削除**
 
@@ -787,21 +821,18 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 4. **workers/ ローカル開発**
    ```bash
    cd workers
-   # wrangler.tomlでR2/KVバインディング設定（local mode）
+   # wrangler.tomlでR2バインディング設定（local mode）
    pnpm dev  # wrangler dev
    # http://localhost:8787 でWorkers実行
    ```
 
-5. **Cloudflare R2/KV作成**
+5. **Cloudflare R2作成**
    ```bash
    # R2バケット作成
    wrangler r2 bucket create pamphlet-storage
 
-   # KV namespace作成
-   wrangler kv:namespace create pamphlet-metadata
-   wrangler kv:namespace create pamphlet-metadata --preview  # dev用
-
-   # wrangler.toml に ID を追記
+   # wrangler.toml のコメントを外して設定
+   # KV namespaceは現在未使用（将来的な拡張のため予約）
    ```
 
 ---
@@ -833,7 +864,7 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 
 ### 本番デプロイ前チェックリスト
 
-- [ ] R2/KVバインディングが本番環境に設定されているか
+- [ ] R2バインディングが本番環境に設定されているか
 - [ ] CORS設定が正しいオリジンに限定されているか
 - [ ] wrangler.toml の `workers_dev = false` に設定
 - [ ] Custom Domain設定（例: `api.pamphlet.example.com`）
@@ -857,11 +888,7 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
   - `R2_BUCKET.get(key)` はReadableStreamを返す
   - `R2_BUCKET.put(key, body, options)` で書き込み
   - アップロード時の並列数を制御（例: Promise.all with chunks of 10）
-
-- **KVの制約**
-  - 値サイズ: 最大25MB（metadata.jsonは十分小さい）
-  - 書き込みは最終的整合性（eventually consistent）
-  - 高頻度読み込みは問題なし
+  - metadata.jsonの読み書きも同じR2を使用（シンプルな設計）
 
 - **CPU時間制限**
   - 無料プラン: 10ms、有料: 50ms（Unboundなら30秒）
