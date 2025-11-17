@@ -1,8 +1,12 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import { ViteClient, Script, Link } from 'vite-ssr-components/hono';
+import upload from './upload';
 
 const admin = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Mount upload router under /admin/upload
+admin.route('/upload', upload);
 
 admin.get('/', (c) => {
   return c.html(

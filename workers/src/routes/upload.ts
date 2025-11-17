@@ -20,10 +20,10 @@ interface UploadRequestBody {
 }
 
 /**
- * POST /upload
+ * POST /
  * Handle upload request (JSON or multipart)
  */
-upload.post('/upload', async (c) => {
+upload.post('/', async (c) => {
   try {
     const contentType = c.req.header('Content-Type') || '';
 

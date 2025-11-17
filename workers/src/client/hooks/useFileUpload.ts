@@ -1,3 +1,5 @@
+import { hc } from 'hono/client';
+import type { AppType } from '../../index';
 import type { ProcessedPage } from '../types';
 
 interface UploadMetadata {
@@ -14,6 +16,9 @@ interface UploadMetadata {
     }>;
   }>;
 }
+
+// Create Hono RPC client
+const client = hc<AppType>('/');
 
 export async function uploadTiles(
   pages: ProcessedPage[],
@@ -61,18 +66,17 @@ export async function uploadTiles(
   formData.append('metadata', JSON.stringify(metadata));
   formData.append('id', pamphletId);
 
-  // アップロード
-  const response = await fetch('/upload', {
-    method: 'POST',
-    body: formData,
+  // アップロード (Hono RPC client)
+  const res = await client.admin.upload.$post({
+    form: formData as any,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Upload failed: ${response.status} ${errorText}`);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Upload failed: ${res.status} ${errorText}`);
   }
 
-  const result = await response.json();
+  const result = await res.json();
   onProgress(100);
 
   return result;
