@@ -6,10 +6,15 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import * as r2Service from '../services/r2';
+import { getMetadataCacheHeaders, getTileCacheHeaders, deleteFromCache } from '../services/cache';
 import { loadMetadata } from '../middleware/metadata';
-import { metadataCache, tileCache, clearMetadataCache } from '../middleware/cache';
+import { createCacheMiddleware } from '../middleware/cache';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Create cache middleware instances
+const metadataCache = createCacheMiddleware(getMetadataCacheHeaders);
+const tileCache = createCacheMiddleware(getTileCacheHeaders);
 
 /**
  * GET /:id/metadata
@@ -17,14 +22,14 @@ const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
  * Public access - no authentication required
  *
  * Middleware stack:
- * - metadataCache: Checks cache and stores response
+ * - metadataCache: Checks cache and stores response using c.req.url as key
  * - loadMetadata: Loads pamphlet metadata from R2 (only on cache miss)
  */
 pamphlet.get('/:id/metadata', metadataCache, loadMetadata, async (c) => {
   // Get metadata from context (loaded by loadMetadata middleware)
   const metadata = c.get('metadata');
 
-  // Return metadata (cache headers added automatically by metadataCache middleware)
+  // Return metadata (cache headers added automatically by cache middleware)
   return c.json(metadata);
 });
 
@@ -34,10 +39,9 @@ pamphlet.get('/:id/metadata', metadataCache, loadMetadata, async (c) => {
  * Public access - no authentication required
  *
  * Middleware stack:
- * - loadMetadata: Loads pamphlet metadata into context
- * - tileCache: Checks cache and stores response
+ * - tileCache: Checks cache and stores response using c.req.url as key
  */
-pamphlet.get('/:id/tile/:hash', loadMetadata, tileCache, async (c) => {
+pamphlet.get('/:id/tile/:hash', tileCache, async (c) => {
   const pamphletId = c.req.param('id');
   const hash = c.req.param('hash');
 
@@ -58,7 +62,7 @@ pamphlet.get('/:id/tile/:hash', loadMetadata, tileCache, async (c) => {
       return c.json({ error: 'Tile not found' }, 404);
     }
 
-    // Return response (cache headers added automatically by tileCache middleware)
+    // Return response (cache headers added automatically by cache middleware)
     return new Response(tileObject.body, {
       status: 200,
       headers: {
@@ -73,14 +77,15 @@ pamphlet.get('/:id/tile/:hash', loadMetadata, tileCache, async (c) => {
 
 /**
  * POST /:id/invalidate
- * Invalidate pamphlet cache by updating version and clearing metadata cache
+ * Clear cache for a specific pamphlet
  * Admin endpoint - should be protected by additional authentication in production
  * (e.g., Cloudflare Access, API key, etc.)
  *
- * Middleware stack:
- * - loadMetadata: Loads pamphlet metadata into context
+ * Note: This only clears the metadata cache. Tile caches will expire naturally via TTL.
+ * For immediate tile cache invalidation, you would need to delete each tile cache entry,
+ * which can be expensive for pamphlets with many tiles.
  */
-pamphlet.post('/:id/invalidate', loadMetadata, async (c) => {
+pamphlet.post('/:id/invalidate', async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -88,28 +93,18 @@ pamphlet.post('/:id/invalidate', loadMetadata, async (c) => {
   }
 
   try {
-    // Get metadata from context (loaded by loadMetadata middleware)
-    const metadata = c.get('metadata');
+    // Construct the metadata URL
+    const metadataUrl = new URL(c.req.url);
+    metadataUrl.pathname = `/pamphlet/${pamphletId}/metadata`;
 
-    if (!metadata) {
-      return c.json({ error: 'Pamphlet not found' }, 404);
-    }
-
-    // Update version (this will invalidate tile cache via new cache keys)
-    const newVersion = Date.now();
-    metadata.version = newVersion;
-
-    // Save updated metadata to R2
-    await r2Service.putMetadata(c.env, pamphletId, metadata);
-
-    // Clear metadata cache explicitly (non-blocking)
-    c.executionCtx.waitUntil(clearMetadataCache(pamphletId));
+    // Delete metadata from cache
+    const deleted = await deleteFromCache(metadataUrl.toString());
 
     return c.json({
       id: pamphletId,
-      version: newVersion,
       status: 'ok',
-      message: 'Cache invalidated successfully',
+      message: 'Metadata cache cleared successfully',
+      deleted,
     });
   } catch (error) {
     console.error('Error invalidating cache:', error);

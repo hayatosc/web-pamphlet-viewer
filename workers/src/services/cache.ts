@@ -1,110 +1,50 @@
 /**
- * Cache API Service - Helper functions for Cloudflare Cache API operations
+ * Cache Service
+ * Simple Cache API wrapper using request URLs as cache keys
  */
 
-/**
- * Generate cache key for metadata
- * @param pamphletId Pamphlet ID
- * @returns Cache key URL
- */
-export function getMetadataCacheKey(pamphletId: string): string {
-  // Use a dummy URL as cache key - only the path matters
-  return `https://dummy/pamphlet:${pamphletId}:metadata`;
-}
+const cache = caches.default;
 
 /**
- * Generate cache key for a tile (hash-based)
- * @param pamphletId Pamphlet ID
- * @param hash Tile SHA256 hash
- * @param version Version number (for cache invalidation)
- * @returns Cache key URL
+ * Get response from cache
  */
-export function getTileCacheKey(
-  pamphletId: string,
-  hash: string,
-  version: number
-): string {
-  // Use a dummy URL as cache key - only the path and query params matter
-  return `https://dummy/pamphlet:${pamphletId}:tile:${hash}:v${version}`;
-}
-
-/**
- * Get metadata from cache
- * @param cacheKey Cache key URL
- * @returns Cached response or null if not found
- */
-export async function getMetadataFromCache(cacheKey: string): Promise<Response | null> {
-  const cache = caches.default;
-  const request = new Request(cacheKey);
+export async function getFromCache(url: string): Promise<Response | null> {
+  const request = new Request(url);
   const response = await cache.match(request);
   return response || null;
 }
 
 /**
- * Put metadata into cache
- * @param cacheKey Cache key URL
- * @param response Response to cache
+ * Put response into cache
  */
-export async function putMetadataIntoCache(cacheKey: string, response: Response): Promise<void> {
-  const cache = caches.default;
-  const request = new Request(cacheKey);
-
-  // Clone the response before caching (response can only be read once)
+export async function putIntoCache(url: string, response: Response): Promise<void> {
+  const request = new Request(url);
   await cache.put(request, response.clone());
 }
 
 /**
- * Delete metadata from cache
- * @param cacheKey Cache key URL
+ * Delete response from cache
  */
-export async function deleteMetadataFromCache(cacheKey: string): Promise<boolean> {
-  const cache = caches.default;
-  const request = new Request(cacheKey);
+export async function deleteFromCache(url: string): Promise<boolean> {
+  const request = new Request(url);
   return await cache.delete(request);
 }
 
 /**
- * Get a tile from cache
- * @param cacheKey Cache key URL
- * @returns Cached response or null if not found
+ * Cache headers for metadata responses
  */
-export async function getTileFromCache(cacheKey: string): Promise<Response | null> {
-  const cache = caches.default;
-  const request = new Request(cacheKey);
-  const response = await cache.match(request);
-  return response || null;
+export function getMetadataCacheHeaders(): HeadersInit {
+  return {
+    'Cache-Control': 'private, max-age=60',
+  };
 }
 
 /**
- * Put a tile into cache
- * @param cacheKey Cache key URL
- * @param response Response to cache
- */
-export async function putTileIntoCache(cacheKey: string, response: Response): Promise<void> {
-  const cache = caches.default;
-  const request = new Request(cacheKey);
-
-  // Clone the response before caching (response can only be read once)
-  await cache.put(request, response.clone());
-}
-
-/**
- * Create cache headers for tile responses
- * @returns Headers object with cache control
+ * Cache headers for tile responses
  */
 export function getTileCacheHeaders(): HeadersInit {
   return {
     'Cache-Control': 'public, max-age=86400, s-maxage=2592000',
     'CDN-Cache-Control': 'max-age=2592000',
-  };
-}
-
-/**
- * Create cache headers for metadata responses
- * @returns Headers object with cache control
- */
-export function getMetadataCacheHeaders(): HeadersInit {
-  return {
-    'Cache-Control': 'private, max-age=60',
   };
 }
