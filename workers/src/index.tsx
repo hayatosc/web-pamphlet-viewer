@@ -11,6 +11,7 @@ import type { Env, Variables } from './types/bindings';
 // Import routers
 import pamphlet from './routes/pamphlet';
 import upload from './routes/upload';
+import admin from './routes/admin';
 
 // Create Hono app with type definitions
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -38,6 +39,7 @@ app.get('/', (c) => {
 
 // Mount routers
 app.route('/pamphlet', pamphlet);
+app.route('/admin', admin);
 app.route('/', upload);
 
 // 404 handler

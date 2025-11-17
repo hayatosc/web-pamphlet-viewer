@@ -77,15 +77,26 @@ async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables
 async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Variables }>) {
   const formData = await c.req.formData();
 
+  // Get id from form
+  const idField = formData.get('id');
+  if (!idField || typeof idField !== 'string') {
+    return c.json({ error: 'Missing id field' }, 400);
+  }
+
   // Get metadata from form
   const metadataField = formData.get('metadata');
   if (!metadataField || typeof metadataField !== 'string') {
     return c.json({ error: 'Missing metadata field' }, 400);
   }
 
-  const uploadData: UploadRequestBody = JSON.parse(metadataField);
+  const parsedMetadata = JSON.parse(metadataField);
+  const uploadData: UploadRequestBody = {
+    id: idField,
+    tile_size: parsedMetadata.tile_size,
+    pages: parsedMetadata.pages,
+  };
 
-  if (!uploadData.id || !uploadData.tile_size || !uploadData.pages) {
+  if (!uploadData.tile_size || !uploadData.pages) {
     return c.json({ error: 'Missing required fields in metadata' }, 400);
   }
 
