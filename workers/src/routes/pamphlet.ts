@@ -6,15 +6,21 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import * as r2Service from '../services/r2';
-import { getMetadataCacheHeaders, getTileCacheHeaders, deleteFromCache } from '../services/cache';
+import { deleteFromCache } from '../services/cache';
 import { loadMetadata } from '../middleware/metadata';
 import { createCacheMiddleware } from '../middleware/cache';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// Create cache middleware instances
-const metadataCache = createCacheMiddleware(getMetadataCacheHeaders);
-const tileCache = createCacheMiddleware(getTileCacheHeaders);
+// Create cache middleware instances with inline headers
+const metadataCache = createCacheMiddleware(() => ({
+  'Cache-Control': 'private, max-age=60',
+}));
+
+const tileCache = createCacheMiddleware(() => ({
+  'Cache-Control': 'public, max-age=86400, s-maxage=2592000',
+  'CDN-Cache-Control': 'max-age=2592000',
+}));
 
 /**
  * GET /:id/metadata
