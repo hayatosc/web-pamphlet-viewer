@@ -10,7 +10,7 @@ import type { Env, Variables } from './types/bindings';
 
 // Import routers
 import pamphlet from './routes/pamphlet';
-import upload from './routes/upload';
+import admin from './routes/admin';
 
 // Create Hono app with type definitions
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -36,26 +36,26 @@ app.get('/', (c) => {
   });
 });
 
-// Mount routers
-app.route('/pamphlet', pamphlet);
-app.route('/', upload);
-
-// 404 handler
-app.notFound((c) => {
-  return c.json({ error: 'Not found' }, 404);
-});
-
-// Error handler
-app.onError((err, c) => {
-  console.error('Unhandled error:', err);
-  return c.json(
-    {
-      error: 'Internal server error',
-      message: err.message,
-    },
-    500
-  );
-});
+// Mount routers and configure handlers
+const routes = app
+  .route('/pamphlet', pamphlet)
+  .route('/admin', admin)
+  .notFound((c) => {
+    return c.json({ error: 'Not found' }, 404);
+  })
+  .onError((err, c) => {
+    console.error('Unhandled error:', err);
+    return c.json(
+      {
+        error: 'Internal server error',
+        message: err.message,
+      },
+      500
+    );
+  });
 
 // Export the app
-export default app;
+export default routes;
+
+// Export type for RPC client
+export type AppType = typeof routes;

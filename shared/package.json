@@ -8,12 +8,17 @@
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types/index.ts",
-    "./types/wasm": "./src/types/wasm.ts"
+    "./types/wasm": "./src/types/wasm.ts",
+    "./schemas": "./src/schemas/index.ts",
+    "./schemas/pamphlet": "./src/schemas/pamphlet.ts"
   },
   "scripts": {
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
   }
 }

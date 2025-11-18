@@ -5,7 +5,7 @@
   "description": "InDesign pamphlet viewer with tiling and edge caching",
   "scripts": {
     "test": "pnpm --filter wasm test",
-    "build": "pnpm --filter wasm build",
+    "build": "pnpm --filter wasm build:release && pnpm --filter workers build",
     "type-check": "pnpm --recursive run type-check"
   },
   "devDependencies": {
