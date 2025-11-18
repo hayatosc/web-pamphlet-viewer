@@ -1,15 +1,13 @@
 import { hc } from 'hono/client';
 import type { AppType } from '../../index';
-import { uploadResponseSchema } from 'shared/schemas/pamphlet';
-import type { ProcessedPage, Metadata } from '../types';
-import type { z } from 'zod';
+import type { ProcessedPage, Metadata, UploadResponse } from '../types';
 
 export async function uploadTiles(
   pages: ProcessedPage[],
   pamphletId: string,
   tileSize: number,
   onProgress: (progress: number) => void
-): Promise<z.infer<typeof uploadResponseSchema>> {
+): Promise<UploadResponse> {
   if (pages.length === 0) {
     throw new Error('アップロード可能なページがありません');
   }
@@ -61,8 +59,7 @@ export async function uploadTiles(
     throw new Error(`Upload failed: ${res.status} ${errorText}`);
   }
 
-  const json = await res.json();
-  const result = uploadResponseSchema.parse(json);
+  const result = await res.json();
   onProgress(100);
 
   return result;

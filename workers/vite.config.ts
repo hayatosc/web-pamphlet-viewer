@@ -3,6 +3,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import ssrPlugin from 'vite-ssr-components/plugin';
 import tailwindcss from '@tailwindcss/vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import path from 'path';
 
 export default defineConfig({
   plugins: [
@@ -18,6 +19,11 @@ export default defineConfig({
       ],
     }),
   ],
+  resolve: {
+    alias: {
+      'shared': path.resolve(__dirname, '../shared/src'),
+    },
+  },
   build: {
     rollupOptions: {
       external: ['/wasm/tile_wasm.js', 'hono/jsx/jsx-runtime'],
