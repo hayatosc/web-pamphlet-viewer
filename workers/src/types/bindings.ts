@@ -7,16 +7,16 @@
  * These match the bindings defined in wrangler.toml
  */
 export interface Env {
-  /**
-   * R2 Bucket for storing pamphlet tiles and metadata
-   * Binding name: R2_BUCKET
-   */
-  R2_BUCKET: R2Bucket;
+	/**
+	 * R2 Bucket for storing pamphlet tiles and metadata
+	 * Binding name: R2_BUCKET
+	 */
+	R2_BUCKET: R2Bucket;
 
-  /**
-   * Environment variable
-   */
-  ENVIRONMENT?: string;
+	/**
+	 * Environment variable
+	 */
+	ENVIRONMENT?: string;
 }
 
 /**
@@ -24,15 +24,15 @@ export interface Env {
  * These can be set and accessed within request handlers
  */
 export type Variables = {
-  // Pamphlet metadata (set by loadMetadata middleware)
-  metadata?: {
-    version: number;
-    tile_size: number;
-    pages: Array<{
-      page: number;
-      width: number;
-      height: number;
-      tiles: Array<{ x: number; y: number; hash: string }>;
-    }>;
-  };
+	// Pamphlet metadata (set by loadMetadata middleware)
+	metadata?: {
+		version: number;
+		tile_size: number;
+		pages: Array<{
+			page: number;
+			width: number;
+			height: number;
+			tiles: Array<{ x: number; y: number; hash: string }>;
+		}>;
+	};
 };
