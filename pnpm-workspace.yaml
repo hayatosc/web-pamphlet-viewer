@@ -1,3 +1,9 @@
 packages:
-  - 'wasm'
-  - 'shared'
+  - workers
+  - wasm
+  - shared
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd

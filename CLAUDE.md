@@ -27,7 +27,7 @@ Rust/WASM（ブラウザ内）
 Workers /upload エンドポイント
   - R2へ書き込み（ハッシュベース）: pamphlets/{id}/tiles/{hash}.webp
   - R2へmetadata保存: pamphlets/{id}/metadata.json
-  - version番号（タイムスタンプ）生成（キャッシュ無効化用）
+  - version番号（タイムスタンプ）生成（将来的な用途のため保存）
   ↓
 R2 に永続化
 ```
@@ -46,14 +46,13 @@ Workers
   - metadataから座標に対応するhashを取得
   ↓ GET /pamphlet/:id/tile/:hash （並列リクエスト）
 Workers
-  - R2から metadata.json 取得してversion番号を確認
   - Cache API チェック（caches.default）
-    - キャッシュキー: pamphlet:{id}:tile:{hash}:v{version}
+    - キャッシュキー: リクエストURL（例: https://api.example.com/pamphlet/{id}/tile/{hash}）
   - HIT → 即座に返す（エッジキャッシュ、レイテンシ 10-30ms）
   - MISS → R2バインディングで取得
     - パス: pamphlets/{id}/tiles/{hash}.webp
     - Content-Type: image/webp
-    - Cache-Control: public, max-age=86400, s-maxage=2592000
+    - Cache-Control: public, max-age=86400, s-maxage=2592000, CDN-Cache-Control: max-age=2592000
     - Cache APIに put（エッジキャッシュ）
   ↓ タイル画像（WebP）
 ブラウザ
@@ -87,9 +86,11 @@ Workers
   - 世界中の閲覧者に低レイテンシで配信
   - R2へのリクエスト数削減 → コスト最適化
 
-- **バージョニング方式**:
-  - metadata.versionをキャッシュキーに含めることで、再アップロード時に古いキャッシュを即座に無効化（cacheキーが変わる）
-  - Purge API不要、実装がシンプル
+- **シンプルなURLベースキャッシング**:
+  - リクエストURLをそのままキャッシュキーとして使用（ダミーURL不要）
+  - キャッシュ無効化は `/invalidate` エンドポイントでメタデータキャッシュをクリア
+  - タイルキャッシュはTTL（30日）で自然に期限切れ、または手動で削除可能
+  - 実装がシンプルで保守性が高い
 
 - **ハッシュベースURLによる限定的セキュリティ**:
   - **ハッシュベースURL**: タイルURLが座標から推測不可能（`/tile/:hash`）
@@ -141,36 +142,37 @@ web-pamphlet-viewer/
 │       │   │                  # - multipart/form-data 受信
 │       │   │                  # - ZIP展開
 │       │   │                  # - R2書き込み（並列）
-│       │   │                  # - metadata更新（KV）
-│       │   ├── metadata.ts    # GET /pamphlet/:id/metadata
-│       │   │                  # - KVからmetadata取得
-│       │   └── tile.ts        # GET /pamphlet/:id/page/:p/tile/:x/:y
-│       │                      # - Cache API確認
-│       │                      # - R2取得（cache miss時）
-│       │                      # - Cache保存
+│       │   │                  # - metadata更新（R2）
+│       │   └── pamphlet.ts    # パンフレット閲覧エンドポイント
+│       │                      # - GET /:id/metadata (metadataキャッシュ統合)
+│       │                      # - GET /:id/tile/:hash (タイルキャッシュ)
+│       │                      # - POST /:id/invalidate (キャッシュ無効化)
 │       ├── pages/
 │       │   └── uploader.tsx   # GET /upload (Hono JSX UI)
 │       │                      # - アップローダー画面レンダリング
 │       │                      # - WASM初期化スクリプト
 │       │                      # - クライアントサイドJS埋め込み
 │       ├── middleware/
-│       │   └── cors.ts        # CORS設定ミドルウェア
-│       │                      # - オリジン検証
-│       │                      # - プリフライトレスポンス
+│       │   ├── metadata.ts    # メタデータ読み込みミドルウェア
+│       │   │                  # - Cache APIチェック
+│       │   │                  # - R2から取得（cache miss時）
+│       │   │                  # - Cache保存
+│       │   │                  # - c.set('metadata', ...)
+│       │   └── cache.ts       # キャッシュミドルウェアファクトリ
+│       │                      # - createCacheMiddleware()
+│       │                      # - カスタムキャッシュヘッダー設定
 │       ├── services/
 │       │   ├── r2.ts          # R2操作ヘルパー
 │       │   │                  # - ファイル書き込み
-│       │   │                  # - ファイル取得
+│       │   │                  # - ファイル取得（metadata、tile）
 │       │   │                  # - パス生成ユーティリティ
-│       │   ├── kv.ts          # KV操作ヘルパー
-│       │   │                  # - metadata保存/取得
-│       │   │                  # - version管理
 │       │   └── cache.ts       # Cache API操作ヘルパー
-│       │                      # - カスタムキー生成
-│       │                      # - キャッシュ保存/取得
+│       │                      # - getFromCache(url)
+│       │                      # - putIntoCache(url, response)
+│       │                      # - deleteFromCache(url)
 │       └── types/
 │           └── bindings.ts    # Workers bindings型定義
-│                              # - Env型（R2_BUCKET, META_KV等）
+│                              # - Env型（R2_BUCKET等）
 │                              # - Variables型
 │
 ├── wasm/                      # Rust/WASM タイル化エンジン
@@ -441,7 +443,7 @@ frontend → wasm/pkg (import)
 
 **wrangler.toml 設定**
 - R2バケット: `pamphlet-storage` をバインディング `R2_BUCKET` として設定
-- KV namespace: 将来的な用途のため予約（現在は未使用）
+- メタデータとタイル画像の両方をR2に保存（KV不使用）
 
 **主要エンドポイント**
 
@@ -465,45 +467,56 @@ frontend → wasm/pkg (import)
      - FormDataからハッシュベースのタイルを取得（`tile-{hash}` パターン）
      - R2に各タイルを書き込み（ハッシュベース）: `pamphlets/{id}/tiles/{hash}.webp`
      - metadata.jsonをR2に保存: `pamphlets/{id}/metadata.json`
-     - metadata.versionを生成（timestamp）
+     - metadata.versionを生成（timestamp、将来的な用途のため保存）
    - レスポンス: `{ id, version, status: 'ok' }`
+   - **注意**: アップロード後、メタデータキャッシュを無効化したい場合は `/invalidate` エンドポイントを使用
 
 3. `GET /pamphlet/:id/metadata`
    - **公開アクセス**: 認証不要
-   - R2から `pamphlets/{id}/metadata.json` を取得
+   - **ミドルウェア**: `loadMetadata`
+     - Cache APIチェック（キャッシュキー: リクエストURL）
+     - キャッシュミス時: R2から `pamphlets/{id}/metadata.json` を取得
+     - レスポンス成功時: Cache APIに保存
    - レスポンス: metadata.json（pages配列、tile_size、version、各タイルのhash情報等）
    - Cache-Control: `private, max-age=60`
 
 4. `GET /pamphlet/:id/tile/:hash`
    - **公開アクセス**: 認証不要
+   - **ミドルウェア**: `tileCache` (createCacheMiddleware)
+     - Cache APIチェック（キャッシュキー: リクエストURL）
+     - キャッシュミス時: 次のハンドラを実行
+     - レスポンス成功時: Cache APIに保存
    - ハッシュ形式検証: 64文字の16進数（SHA256）
-   - キャッシュキー生成: `pamphlet:{id}:tile:{hash}:v{version}`（versionはmetadataから取得）
-   - Cache APIチェック（caches.default.match(cacheKey)）
-   - HIT → 即座に返す（エッジキャッシュ、10-30ms）
-   - MISS:
-     - R2バインディングで取得: `R2_BUCKET.get('pamphlets/{id}/tiles/{hash}.webp')`
-     - レスポンスヘッダ:
-       - `Content-Type: image/webp`
-       - `Cache-Control: public, max-age=86400, s-maxage=2592000`
-     - Cache APIに保存: `cache.put(cacheKey, response.clone())`
+   - R2バインディングで取得: `R2_BUCKET.get('pamphlets/{id}/tiles/{hash}.webp')`
+   - レスポンスヘッダ:
+     - `Content-Type: image/webp`
+     - `Cache-Control: public, max-age=86400, s-maxage=2592000`
+     - `CDN-Cache-Control: max-age=2592000`
    - レスポンス: 画像バイナリ（WebP）
 
 5. `POST /pamphlet/:id/invalidate` (管理用)
    - **管理エンドポイント**: Cloudflare Access、API key等で保護推奨
-   - R2からmetadata.jsonを取得
-   - metadata.versionを更新（新しいtimestamp）
-   - 更新したmetadata.jsonをR2に保存
-   - レスポンス: `{ id, version, status, message }`
+   - メタデータURLを構築（`/pamphlet/{id}/metadata`）
+   - Cache APIから該当URLのキャッシュを削除
+   - レスポンス: `{ id, status, message, deleted }`
+   - **注意**: タイルキャッシュは削除しない（TTLで自然に期限切れ、または個別に削除可能）
 
 **キャッシュ無効化戦略**
 
-- **バージョニング方式（推奨）**: metadata.versionをキャッシュキーに含める
-  - 再アップロード時にversionをインクリメント → 新しいキャッシュキーで取得
-  - 古いキャッシュは自然にTTLで削除される
-  - メリット: 即座に反映、実装シンプル
-- **Purge方式（オプション）**: Surrogate-Key を使ったPurge
-  - CF EnterpriseプランのみCache Purge APIが使える
-  - `cache.delete(key)` を並列実行（ただし大量タイルの場合コスト高）
+- **メタデータキャッシュのクリア** (`POST /pamphlet/:id/invalidate`)
+  - `/pamphlet/{id}/metadata` のキャッシュを削除
+  - 次回アクセス時にR2から最新のメタデータを取得
+  - クライアントは最新のタイルハッシュ情報を受け取る
+
+- **タイルキャッシュの扱い**
+  - 基本: TTL（30日）で自然に期限切れ
+  - 即時削除が必要な場合: 各タイルURLのキャッシュを `cache.delete()` で個別削除
+  - 大量タイルの場合は並列削除（コスト注意）
+
+- **実装方針**
+  - URLベースのシンプルなキャッシング（バージョン管理不要）
+  - ミドルウェアで統一的なキャッシュ処理
+  - `createCacheMiddleware()` ファクトリでカスタムキャッシュヘッダー設定可能
 
 **並列処理・制御**
 
@@ -709,8 +722,9 @@ frontend → wasm/pkg (import)
 
 2. **Cloudflare Edge Cache（Cache API）**
    - Workers の `caches.default` に保存
-   - キャッシュキー: `pamphlet:{id}:p{page}:x{x}:y{y}:v{version}`
-   - TTL: `s-maxage=2592000`（30日、調整可能）
+   - **キャッシュキー**: リクエストURL（例: `https://api.example.com/pamphlet/{id}/tile/{hash}`）
+   - TTL: タイル30日（`s-maxage=2592000`）、メタデータ60秒（`max-age=60`）
+   - ミドルウェアで自動的にキャッシュ管理
 
 3. **R2（オリジンストレージ）**
    - 永続化
@@ -718,46 +732,65 @@ frontend → wasm/pkg (import)
 
 ### キャッシュキー設計
 
-**重要: versionをキーに含める**
+**URLベースのシンプルなキャッシング**
 
 ```
-pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
-例: pamphlet:abc123:p0:x0:y0:v1699999999
+メタデータ: https://api.example.com/pamphlet/{id}/metadata
+タイル:     https://api.example.com/pamphlet/{id}/tile/{hash}
 ```
 
-- 再アップロード時に `metadata.version` をインクリメント（timestamp推奨）
-- 新versionのタイルは新しいキャッシュキーで取得される
-- 古いversionのキャッシュは自然にTTL expireで削除
+- リクエストURLをそのままキャッシュキーとして使用
+- ダミーURLの構築不要、実装がシンプル
+- ミドルウェア（`loadMetadata`、`createCacheMiddleware`）が自動的に `c.req.url` を使用
 
 ### キャッシュ無効化フロー
 
-**アップロード時**
+**メタデータ無効化（POST /pamphlet/:id/invalidate）**
 
-1. Workers `/upload` が完了
-2. `metadata.version` を生成（`Date.now()` timestamp）
-3. R2に新metadata保存: `pamphlets/{id}/metadata.json`
-4. 古いキャッシュはversionが異なるため自動的にミス → 新タイルを取得
+1. メタデータURLを構築: `/pamphlet/{id}/metadata`
+2. `cache.delete(url)` でキャッシュから削除
+3. 次回アクセス時にR2から最新のメタデータを取得
+4. クライアントは最新のタイルハッシュ情報を受け取る
 
-**手動無効化時（POST /pamphlet/:id/invalidate）**
+**タイルキャッシュの扱い**
 
-1. R2から現在のmetadata.jsonを取得
-2. `metadata.version` を更新（新しい`Date.now()` timestamp）
-3. 更新したmetadata.jsonをR2に保存
-4. 次回のタイルリクエスト時、新しいversionでキャッシュキーが生成される
+- 基本: TTL（30日）で自然に期限切れ
+- 即時削除が必要な場合: 各タイルURLを `cache.delete()` で個別削除
+- 実装例:
+  ```typescript
+  const tileUrl = new URL(`/pamphlet/${id}/tile/${hash}`, c.req.url);
+  await deleteFromCache(tileUrl.toString());
+  ```
 
-**オプション: 即時削除**
+### ミドルウェアアーキテクチャ
 
-- CF Enterprise プランなら Purge API使用可能
-- または Workers で `cache.delete(oldKey)` を並列実行（コスト高、大量タイル時は注意）
+**loadMetadata ミドルウェア**
+- Cache APIチェック → R2取得 → Cache保存の一連の流れを統合
+- コンテキスト変数 `c.set('metadata', metadata)` に保存
+- レスポンス成功時（200）に自動的にキャッシュ保存
+
+**createCacheMiddleware ファクトリ**
+- カスタムキャッシュヘッダーを指定可能
+- Cache APIチェック → ハンドラ実行 → Cache保存の流れを自動化
+- 使用例:
+  ```typescript
+  const tileCache = createCacheMiddleware(() => ({
+    'Cache-Control': 'public, max-age=86400, s-maxage=2592000',
+    'CDN-Cache-Control': 'max-age=2592000',
+  }));
+  ```
 
 ### Cache-Control ヘッダ戦略
 
-- **タイルレスポンス**: `Cache-Control: public, max-age=86400, s-maxage=2592000`
-  - `public`: 共有キャッシュ可
-  - `max-age=86400`: ブラウザで1日キャッシュ
-  - `s-maxage=2592000`: CDN/プロキシで30日キャッシュ
+- **タイルレスポンス**:
+  - `Cache-Control: public, max-age=86400, s-maxage=2592000`
+    - `public`: 共有キャッシュ可
+    - `max-age=86400`: ブラウザで1日キャッシュ
+    - `s-maxage=2592000`: CDN/プロキシで30日キャッシュ
+  - `CDN-Cache-Control: max-age=2592000`
+    - Cloudflare特有のヘッダー、CDNキャッシュTTLを明示的に指定
 - **metadata**: `Cache-Control: private, max-age=60`
-  - 頻繁に変わる可能性があるため短いTTL
+  - 頻繁に変わる可能性があるため短いTTL（60秒）
 
 ### 署名付きURLとの比較
 
@@ -831,8 +864,7 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
    # R2バケット作成
    wrangler r2 bucket create pamphlet-storage
 
-   # wrangler.toml のコメントを外して設定
-   # KV namespaceは現在未使用（将来的な拡張のため予約）
+   # wrangler.toml でR2バインディングを設定
    ```
 
 ---
@@ -882,7 +914,11 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
   - `cache.put()` はメモリでレスポンスをバッファリング → 大量同時実行時はメモリ注意
   - **キャッシュキーは完全一致**が必須:
     - URLのクエリパラメータも含まれる
-    - 例: `new Request('https://dummy/pamphlet/abc/tile/0/0')` をキーにして `cache.match()` / `cache.put()`
+    - 本実装では `c.req.url`（リクエストURL）をそのまま使用
+    - 例: `new Request(c.req.url)` でキャッシュキーを生成
+  - **ミドルウェアでの自動化**:
+    - `loadMetadata` と `createCacheMiddleware` が自動的にキャッシュ処理
+    - エンドポイント実装がシンプルに保たれる
 
 - **R2バインディング**
   - `R2_BUCKET.get(key)` はReadableStreamを返す
