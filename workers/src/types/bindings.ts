@@ -8,16 +8,10 @@
  */
 export interface Env {
   /**
-   * R2 Bucket for storing pamphlet tiles
+   * R2 Bucket for storing pamphlet tiles and metadata
    * Binding name: R2_BUCKET
    */
   R2_BUCKET: R2Bucket;
-
-  /**
-   * KV Namespace for storing pamphlet metadata
-   * Binding name: META_KV
-   */
-  META_KV: KVNamespace;
 
   /**
    * Environment variable

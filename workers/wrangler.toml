@@ -13,10 +13,6 @@ binding = "R2_BUCKET"
 bucket_name = "pamphlet-storage-dev"
 preview_bucket_name = "pamphlet-storage-dev"
 
-[[kv_namespaces]]
-binding = "META_KV"
-id = "local-meta-kv"
-
 # Variables
 [vars]
 ENVIRONMENT = "development"
@@ -26,10 +22,6 @@ ENVIRONMENT = "development"
 # [[env.production.r2_buckets]]
 # binding = "R2_BUCKET"
 # bucket_name = "pamphlet-storage"
-#
-# [[env.production.kv_namespaces]]
-# binding = "META_KV"
-# id = "your-production-namespace-id-here"
 #
 # [env.production.vars]
 # ENVIRONMENT = "production"
