@@ -4,28 +4,15 @@
  */
 
 import { Hono, Context } from 'hono';
-import { z } from 'zod';
 import type { Env, Variables } from '../types/bindings';
-import type { Metadata, PageInfo, UploadResponse } from 'shared/types/wasm';
+import type { Metadata, UploadResponse } from 'shared/types/wasm';
+import {
+  uploadRequestSchema,
+  uploadFormDataSchema,
+  uploadResponseSchema,
+  metadataSchema,
+} from 'shared/schemas/pamphlet';
 import * as r2Service from '../services/r2';
-
-/**
- * Upload Request Body (JSON format)
- */
-interface UploadRequestBody {
-  id: string;
-  tile_size: number;
-  pages: PageInfo[];
-}
-
-/**
- * Response schema for upload
- */
-export const uploadResponseSchema = z.object({
-  id: z.string(),
-  version: z.number(),
-  status: z.literal('ok'),
-});
 
 /**
  * POST /
@@ -58,24 +45,31 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>().post(
  * Handle JSON upload (metadata only)
  */
 async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables }>) {
-  const body = await c.req.json<UploadRequestBody>();
+  const body = await c.req.json();
 
-  if (!body.id || !body.tile_size || !body.pages) {
-    return c.json({ error: 'Missing required fields: id, tile_size, pages' }, 400);
+  // Validate request body with zod
+  const validationResult = uploadRequestSchema.safeParse(body);
+  if (!validationResult.success) {
+    return c.json(
+      { error: 'Invalid request body', details: validationResult.error.issues },
+      400
+    );
   }
+
+  const validatedData = validationResult.data;
 
   // Create metadata with current timestamp as version
   const metadata: Metadata = {
     version: Date.now(),
-    tile_size: body.tile_size,
-    pages: body.pages,
+    tile_size: validatedData.tile_size,
+    pages: validatedData.pages,
   };
 
   // Save metadata to R2
-  await r2Service.putMetadata(c.env, body.id, metadata);
+  await r2Service.putMetadata(c.env, validatedData.id, metadata);
 
   return c.json<UploadResponse>({
-    id: body.id,
+    id: validatedData.id,
     version: metadata.version,
     status: 'ok' as const,
   });
@@ -99,23 +93,46 @@ async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Vari
     return c.json({ error: 'Missing metadata field' }, 400);
   }
 
-  const parsedMetadata = JSON.parse(metadataField);
-  const uploadData: UploadRequestBody = {
-    id: idField,
-    tile_size: parsedMetadata.tile_size,
-    pages: parsedMetadata.pages,
-  };
-
-  if (!uploadData.tile_size || !uploadData.pages) {
-    return c.json({ error: 'Missing required fields in metadata' }, 400);
+  // Parse and validate metadata JSON
+  let parsedMetadata: unknown;
+  try {
+    parsedMetadata = JSON.parse(metadataField);
+  } catch (error) {
+    return c.json({ error: 'Invalid JSON in metadata field' }, 400);
   }
+
+  // Validate metadata with zod
+  const metadataValidation = metadataSchema.safeParse(parsedMetadata);
+  if (!metadataValidation.success) {
+    return c.json(
+      { error: 'Invalid metadata structure', details: metadataValidation.error.issues },
+      400
+    );
+  }
+
+  const validatedMetadata = metadataValidation.data;
+
+  // Validate form data (id + metadata)
+  const formDataValidation = uploadFormDataSchema.safeParse({
+    id: idField,
+    metadata: validatedMetadata,
+  });
+
+  if (!formDataValidation.success) {
+    return c.json(
+      { error: 'Invalid form data', details: formDataValidation.error.issues },
+      400
+    );
+  }
+
+  const validatedFormData = formDataValidation.data;
 
   // Upload tiles to R2 in parallel
   const uploadPromises: Promise<unknown>[] = [];
 
   for (const [key, value] of formData.entries()) {
-    // Skip metadata field
-    if (key === 'metadata') continue;
+    // Skip metadata and id fields
+    if (key === 'metadata' || key === 'id') continue;
 
     // Parse tile key: "tile-{hash}"
     const match = key.match(/^tile-([a-f0-9]{64})$/i);
@@ -128,24 +145,23 @@ async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Vari
 
     // Upload tile to R2
     const arrayBuffer = await value.arrayBuffer();
-    uploadPromises.push(r2Service.putTile(c.env, uploadData.id, hash, arrayBuffer));
+    uploadPromises.push(r2Service.putTile(c.env, validatedFormData.id, hash, arrayBuffer));
   }
 
   // Wait for all uploads to complete
   await Promise.all(uploadPromises);
 
-  // Create metadata
+  // Update metadata version with current timestamp
   const metadata: Metadata = {
+    ...validatedMetadata,
     version: Date.now(),
-    tile_size: uploadData.tile_size,
-    pages: uploadData.pages,
   };
 
   // Save metadata to R2
-  await r2Service.putMetadata(c.env, uploadData.id, metadata);
+  await r2Service.putMetadata(c.env, validatedFormData.id, metadata);
 
   return c.json<UploadResponse>({
-    id: uploadData.id,
+    id: validatedFormData.id,
     version: metadata.version,
     status: 'ok' as const,
   });

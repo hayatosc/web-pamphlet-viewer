@@ -1,6 +1,6 @@
 import { hc } from 'hono/client';
 import type { AppType } from '../../index';
-import { uploadResponseSchema } from '../../routes/upload';
+import { uploadResponseSchema } from 'shared/schemas/pamphlet';
 import type { ProcessedPage, Metadata } from '../types';
 import type { z } from 'zod';
 
