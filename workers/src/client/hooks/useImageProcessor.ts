@@ -52,30 +52,37 @@ export async function processImages(
         });
       }
 
+      // ローカル配列を更新
+      pages[i] = {
+        ...pages[i],
+        tiles: tilesWithData,
+        width: result.width,
+        height: result.height,
+        status: 'completed' as const,
+        progress: 100,
+      };
+
       onPageUpdate((prev) =>
         prev.map((p, idx) =>
           idx === i
-            ? {
-                ...p,
-                tiles: tilesWithData,
-                width: result.width,
-                height: result.height,
-                status: 'completed' as const,
-                progress: 100,
-              }
+            ? pages[i]
             : p
         )
       );
     } catch (error) {
       console.error(`Error processing page ${i}:`, error);
+
+      // ローカル配列を更新
+      pages[i] = {
+        ...pages[i],
+        status: 'error' as const,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+
       onPageUpdate((prev) =>
         prev.map((p, idx) =>
           idx === i
-            ? {
-                ...p,
-                status: 'error' as const,
-                error: error instanceof Error ? error.message : 'Unknown error',
-              }
+            ? pages[i]
             : p
         )
       );
