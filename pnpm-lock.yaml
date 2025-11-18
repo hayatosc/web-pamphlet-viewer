@@ -17,6 +17,9 @@ importers:
       hono:
         specifier: ^4.10.6
         version: 4.10.6
+      lucide-svelte:
+        specifier: ^0.554.0
+        version: 0.554.0(svelte@5.43.10)
       svelte:
         specifier: ^5.1.9
         version: 5.43.10
@@ -1377,6 +1380,11 @@ packages:
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
+
+  lucide-svelte@0.554.0:
+    resolution: {integrity: sha512-LLcpHi3SuKup0nVD1kKqo8FDZnjXJp48uST26GGh8Jcyrxqk5gmgpnvKmHsHox674UL3cPS1DCul/wFL7ybGqg==}
+    peerDependencies:
+      svelte: ^3 || ^4 || ^5.0.0-next.42
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -2747,6 +2755,10 @@ snapshots:
   locate-character@3.0.0: {}
 
   loupe@3.2.1: {}
+
+  lucide-svelte@0.554.0(svelte@5.43.10):
+    dependencies:
+      svelte: 5.43.10
 
   magic-string@0.30.21:
     dependencies:

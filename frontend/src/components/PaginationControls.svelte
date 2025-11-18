@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+
   /**
    * ページネーションコントロール
    */
@@ -23,20 +25,24 @@
   <button
     onclick={onPrev}
     disabled={!canGoPrev}
-    class="px-6 py-3 min-w-[100px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
+    class="flex items-center justify-center gap-2 px-4 py-3 min-w-[44px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
+    aria-label="Previous page"
   >
-    Previous
+    <ChevronLeft size={20} />
+    <span class="hidden sm:inline">Previous</span>
   </button>
 
-  <span class="text-sm md:text-base text-gray-600 whitespace-nowrap">
-    Page {currentPage + 1} / {totalPages}
+  <span class="text-sm md:text-base text-gray-600 whitespace-nowrap font-medium">
+    {currentPage + 1} / {totalPages}
   </span>
 
   <button
     onclick={onNext}
     disabled={!canGoNext}
-    class="px-6 py-3 min-w-[100px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
+    class="flex items-center justify-center gap-2 px-4 py-3 min-w-[44px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
+    aria-label="Next page"
   >
-    Next
+    <span class="hidden sm:inline">Next</span>
+    <ChevronRight size={20} />
   </button>
 </div>
