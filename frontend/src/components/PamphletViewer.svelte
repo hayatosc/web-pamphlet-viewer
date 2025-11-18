@@ -7,6 +7,7 @@
   import { CanvasRenderer } from '../lib/canvas-renderer';
   import { calculateViewportBounds, getVisibleTiles } from '../lib/viewport';
   import { TouchHandler } from '../lib/touch-handler';
+  import { createApiClient } from '../lib/api-client';
 
   // Props (attributes)
   let {
@@ -63,11 +64,21 @@
    */
   async function fetchMetadata(): Promise<void> {
     try {
-      const response = await fetch(`${apiBase}/pamphlet/${pamphletId}/metadata`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch metadata: ${response.statusText}`);
+      const client = createApiClient(apiBase);
+      const res = await (client.pamphlet as any)[':id'].metadata.$get({
+        param: { id: pamphletId }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch metadata: ${res.statusText}`);
       }
-      metadata = await response.json();
+
+      const data = await res.json();
+      metadata = {
+        version: data.version,
+        tile_size: data.tile_size,
+        pages: data.pages
+      };
 
       // URLパラメータからページ番号を取得
       const urlPage = getPageFromUrl();
@@ -124,7 +135,7 @@
       // 優先的に可視タイルを読み込み
       for (const tile of visibleTiles) {
         try {
-          const img = await tileLoader.loadTile(tile, apiBase, pamphletId, 10);
+          const img = await tileLoader.loadTile(tile, 10);
           renderer.drawTile(tile, img);
           loadingTiles++;
         } catch (err) {
@@ -135,7 +146,7 @@
       // 残りのタイルを読み込み
       for (const tile of remainingTiles) {
         try {
-          const img = await tileLoader.loadTile(tile, apiBase, pamphletId, 1);
+          const img = await tileLoader.loadTile(tile, 1);
           renderer.drawTile(tile, img);
           loadingTiles++;
         } catch (err) {
@@ -232,7 +243,7 @@
     // すべてのタイルを再描画
     for (const tile of currentPageData.tiles) {
       try {
-        const img = await tileLoader.loadTile(tile, apiBase, pamphletId, 5);
+        const img = await tileLoader.loadTile(tile, 5);
         renderer.drawTile(tile, img);
       } catch (err) {
         console.error(`Failed to redraw tile ${tile.x},${tile.y}:`, err);
@@ -254,7 +265,7 @@
   // 初期化
   onMount(async () => {
     // TileLoaderを初期化
-    tileLoader = new TileLoader(6);
+    tileLoader = new TileLoader(apiBase, pamphletId, 6);
 
     // TouchHandlerを初期化
     if (canvasContainer) {
