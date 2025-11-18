@@ -52,7 +52,7 @@ export async function uploadTiles(
 
   // アップロード (Hono RPC client with FormData)
   const client = hc<AppType>('/');
-  const res = await client.admin.upload.$post({
+  const res = await client.admin.upload.multipart.$post({
     form: formData,
   });
 
