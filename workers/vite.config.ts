@@ -22,6 +22,7 @@ export default defineConfig({
   resolve: {
     alias: {
       'shared': path.resolve(__dirname, '../shared/src'),
+      '/wasm': path.resolve(__dirname, '../wasm/pkg'),
     },
   },
   build: {
