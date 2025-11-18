@@ -32,15 +32,6 @@ export const metadataSchema = z.object({
 });
 
 /**
- * アップロードリクエストスキーマ（JSON形式）
- */
-export const uploadRequestSchema = z.object({
-  id: z.string().min(1).max(255),
-  tile_size: z.number().int().positive(),
-  pages: z.array(pageInfoSchema).min(1),
-});
-
-/**
  * アップロードレスポンススキーマ
  */
 export const uploadResponseSchema = z.object({

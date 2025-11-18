@@ -1,15 +1,12 @@
 /**
  * Upload Router
- * POST /admin/upload - JSON upload (metadata only)
- * POST /admin/upload/multipart - Multipart upload (with tile files)
+ * POST /admin/upload - Multipart upload (with tile files)
  */
 
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import type { Env, Variables } from '../types/bindings';
 import type { Metadata, UploadResponse } from 'shared/types/wasm';
 import {
-  uploadRequestSchema,
   uploadFormDataSchema,
   metadataSchema,
 } from 'shared/schemas/pamphlet';
@@ -17,40 +14,9 @@ import * as r2Service from '../services/r2';
 
 const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
   /**
-   * POST / - Handle JSON upload (metadata only)
+   * POST / - Handle multipart upload (with tile files)
    */
-  .post(
-    '/',
-    zValidator('json', uploadRequestSchema),
-    async (c) => {
-      try {
-        const validatedData = c.req.valid('json');
-
-        // Create metadata with current timestamp as version
-        const metadata: Metadata = {
-          version: Date.now(),
-          tile_size: validatedData.tile_size,
-          pages: validatedData.pages,
-        };
-
-        // Save metadata to R2
-        await r2Service.putMetadata(c.env, validatedData.id, metadata);
-
-        return c.json<UploadResponse>({
-          id: validatedData.id,
-          version: metadata.version,
-          status: 'ok' as const,
-        });
-      } catch (error) {
-        console.error('Error handling JSON upload:', error);
-        return c.json({ error: 'Internal server error', message: String(error) }, 500);
-      }
-    }
-  )
-  /**
-   * POST /multipart - Handle multipart upload (with tile files)
-   */
-  .post('/multipart', async (c) => {
+  .post('/', async (c) => {
     try {
       const formData = await c.req.formData();
 
