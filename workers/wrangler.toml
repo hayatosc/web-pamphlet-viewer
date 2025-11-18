@@ -10,8 +10,8 @@ observability = { enabled = true }
 # For local development with wrangler dev
 [[r2_buckets]]
 binding = "R2_BUCKET"
-bucket_name = "pamphlet-storage-dev"
-preview_bucket_name = "pamphlet-storage-dev"
+bucket_name = "pamphlet-storage"
+preview_bucket_name = "pamphlet-storage"
 
 # Variables
 [vars]
