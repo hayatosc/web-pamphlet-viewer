@@ -41,20 +41,33 @@ export class TouchHandler {
   private lastTapTime = 0;
   private doubleTapDelay = 300; // ms
 
+  // バインドされたイベントハンドラ（メモリリーク防止）
+  private boundHandleTouchStart: (e: TouchEvent) => void;
+  private boundHandleTouchMove: (e: TouchEvent) => void;
+  private boundHandleTouchEnd: (e: TouchEvent) => void;
+  private boundHandleContextMenu: (e: Event) => void;
+
   constructor(element: HTMLElement, callbacks: TouchHandlerCallbacks) {
     this.element = element;
     this.callbacks = callbacks;
+
+    // イベントハンドラをバインド
+    this.boundHandleTouchStart = this.handleTouchStart.bind(this);
+    this.boundHandleTouchMove = this.handleTouchMove.bind(this);
+    this.boundHandleTouchEnd = this.handleTouchEnd.bind(this);
+    this.boundHandleContextMenu = (e: Event) => e.preventDefault();
+
     this.setupListeners();
   }
 
   private setupListeners(): void {
     // タッチイベント（パッシブリスナーでパフォーマンス向上）
-    this.element.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
-    this.element.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
-    this.element.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: true });
+    this.element.addEventListener('touchstart', this.boundHandleTouchStart, { passive: false });
+    this.element.addEventListener('touchmove', this.boundHandleTouchMove, { passive: false });
+    this.element.addEventListener('touchend', this.boundHandleTouchEnd, { passive: true });
 
     // コンテキストメニュー無効化（長押し時のメニュー）
-    this.element.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.element.addEventListener('contextmenu', this.boundHandleContextMenu);
   }
 
   private handleTouchStart(e: TouchEvent): void {
@@ -193,8 +206,9 @@ export class TouchHandler {
    * クリーンアップ
    */
   destroy(): void {
-    this.element.removeEventListener('touchstart', this.handleTouchStart.bind(this));
-    this.element.removeEventListener('touchmove', this.handleTouchMove.bind(this));
-    this.element.removeEventListener('touchend', this.handleTouchEnd.bind(this));
+    this.element.removeEventListener('touchstart', this.boundHandleTouchStart);
+    this.element.removeEventListener('touchmove', this.boundHandleTouchMove);
+    this.element.removeEventListener('touchend', this.boundHandleTouchEnd);
+    this.element.removeEventListener('contextmenu', this.boundHandleContextMenu);
   }
 }

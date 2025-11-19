@@ -4,11 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [
-    svelte({
-      compilerOptions: {
-        customElement: true
-      }
-    }),
+    svelte(),
     tailwindcss()
   ],
   build: {
