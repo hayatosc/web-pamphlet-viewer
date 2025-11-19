@@ -58,6 +58,15 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
             }
           : (() => {
               const isOddPage = currentPage % 2 === 1;
+              // 裏表紙の1つ前のページが見開きに含まれないようにする
+              if (isOddPage && currentPage + 1 >= totalPages - 1) {
+                // 奇数ページで、次のページが裏表紙になる場合は単独表示
+                return {
+                  leftPage: currentPage,
+                  rightPage: null,
+                  isCover: false,
+                };
+              }
               return {
                 leftPage: isOddPage ? currentPage : currentPage - 1,
                 rightPage: isOddPage ? currentPage + 1 : currentPage,
@@ -553,7 +562,9 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
 
     if (currentPage === totalPages - 1) {
       // 裏表紙の前 → 最後の見開きの左ページ
-      const lastSpreadLeftPage = totalPages - 2;
+      const lastContentPage = totalPages - 2;
+      // 最後のコンテンツページが属する見開きの左ページを計算
+      const lastSpreadLeftPage = lastContentPage % 2 === 1 ? lastContentPage : lastContentPage - 1;
       goToPage(lastSpreadLeftPage, canvasElement);
     } else if (spread.leftPage !== null && spread.leftPage === 0) {
       // ページ0（表紙）の前はなし
