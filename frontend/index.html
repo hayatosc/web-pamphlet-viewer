@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Pamphlet Viewer - Development</title>
+    <style>
+      /* モバイル最適化 */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+    </style>
+  </head>
+  <body class="m-0 p-0">
+    <div style="width: 100vw; height: 100vh;">
+      <pamphlet-viewer
+        pamphlet-id="test"
+        api-base="http://localhost:8787"
+      ></pamphlet-viewer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

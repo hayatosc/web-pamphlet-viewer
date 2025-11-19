@@ -1,6 +1,7 @@
 packages:
   - workers
   - wasm
+  - frontend
   - shared
 
 onlyBuiltDependencies:

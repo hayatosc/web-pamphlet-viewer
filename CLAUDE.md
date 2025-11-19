@@ -36,15 +36,23 @@ R2 に永続化
 
 ```
 ブラウザ（閲覧者）- 公開アクセス、認証不要
-  ↓ GET /pamphlet/:id/metadata
+  ↓ GET /pamphlet/:id/metadata?pages=X-Y （プログレッシブローディング）
 Workers
   - R2から metadata.json 取得 (pamphlets/{id}/metadata.json)
-  ↓ metadata（pages配列、tile_size、version、各タイルのhash情報）を返す
-ブラウザ
-  - Canvas初期化
-  - viewport計算 → 必要タイル特定
+  - ページ範囲フィルタリング（start-end）
+  ↓ metadata（指定範囲のpages配列、tile_size、version、total_pages、has_more）を返す
+ブラウザ（Svelte 5 Web Component）
+  【初期表示フェーズ】
+  - 初回: URLパラメータ（?page=X）周辺6ページのみ取得
+  - Canvas初期化（現在ページ）
+  - viewport計算 → 必要タイル特定（優先度10）
+  - 残りタイル（優先度1）
+
+  【バックグラウンドフェーズ】
+  - 残りページを50ページずつ並列取得（待機時間なし、Cloudflare最適化）
   - metadataから座標に対応するhashを取得
-  ↓ GET /pamphlet/:id/tile/:hash （並列リクエスト）
+
+  ↓ GET /pamphlet/:id/tile/:hash （hono/client RPC、6並列制御）
 Workers
   - Cache API チェック（caches.default）
     - キャッシュキー: リクエストURL（例: https://api.example.com/pamphlet/{id}/tile/{hash}）
@@ -54,10 +62,12 @@ Workers
     - Content-Type: image/webp
     - Cache-Control: public, max-age=86400, s-maxage=2592000, CDN-Cache-Control: max-age=2592000
     - Cache APIに put（エッジキャッシュ）
-  ↓ タイル画像（WebP）
+  ↓ タイル画像（WebP、Blob）
 ブラウザ
-  - Image.decode()後、Canvasに描画
-  - プリフェッチ（前後ページ）
+  - ObjectURL経由でImage読み込み
+  - Canvasに描画（CanvasRenderer）
+  - URLリーク防止（revokeObjectURL）
+  - タッチジェスチャー対応（ピンチズーム、スワイプ）
 ```
 
 ### なぜこの構成か
@@ -639,76 +649,129 @@ frontend → wasm/pkg (import)
 - 任意のHTMLページに埋め込み可能
 - Canvas描画、タイル並列取得、viewport計算
 
-#### 実装方針
+#### 実装方針（実装済み）
+
+**技術スタック**
+
+- **Svelte 5.1.9**: 最新のrunes（$state, $derived, $effect）を使用
+- **Vite 6.0.1**: ビルドツール、開発サーバー
+- **Tailwind CSS v4.0.0-beta.5**: ユーティリティファーストCSS、カスタムCSSなし
+- **hono/client**: 型安全なRPC-style API呼び出し
+- **lucide-svelte 0.554.0**: アイコンライブラリ（ページネーション等）
+- **TypeScript 5.7.2**: 厳格な型チェック
 
 **Svelte 5 Web Component化**
 
 - `svelte.config.js` で `customElement: true` を設定
 - `<svelte:options customElement="pamphlet-viewer" />` を指定
-- ビルド出力: `dist/pamphlet-viewer.js`（単一バンドル、またはESM）
+- ビルド出力: `dist/pamphlet-viewer.js`（ESM + UMD）
 
-#### PamphletViewer.svelte
+**コンポーネント構成**
+
+- **PamphletViewer.svelte**: メインコンポーネント（110行、リファクタリング済み）
+- **ViewerCanvas.svelte**: Canvas表示コンテナ
+- **PaginationControls.svelte**: ページネーション UI（lucide-svelte アイコン使用）
+- **LoadingOverlay.svelte**: ローディング状態表示
+
+**hooks（カスタムロジック）**
+
+- **usePamphletViewer.ts**: パンフレット表示ロジック（300行）
+  - プログレッシブローディング（初期6ページ → バックグラウンドで残り50ページずつ）
+  - URLパラメータ対応（`?page=3`）
+  - ページ遷移管理
+- **useTouchGestures.ts**: タッチジェスチャー処理
+  - ピンチズーム（0.5x-5x）
+  - 2本指パン
+  - スワイプでページ遷移
+  - ダブルタップでリセット
+
+**ライブラリ（自作）**
+
+- **api-client.ts**: hono/clientラッパー（型安全なAPI呼び出し）
+- **tile-loader.ts**: タイル並列取得（6並列、優先度キュー）
+- **canvas-renderer.ts**: Canvas描画エンジン（高DPI対応、transform管理）
+- **viewport.ts**: viewport計算ユーティリティ
+- **touch-handler.ts**: TouchEvent処理クラス
+
+#### PamphletViewer実装詳細
 
 **props（attribute）**
 
 - `pamphlet-id`: string（必須）
 - `api-base`: string（Workers URL、デフォルト `''`）
 
-**機能**
+**主要機能**
 
-1. metadata取得
-   - `onMount` で `GET {apiBase}/pamphlet/{id}/metadata`
-   - metadataから: pages配列、tile_size、version、各ページのwidth/height
-
-2. Canvas初期化
-   - 現在ページのwidth/heightでCanvas要素を作成
-   - devicePixelRatio考慮（高DPI対応）
-
-3. viewport計算
-   - 現在のスクロール位置 + Canvas表示領域から、必要なタイル座標を計算
-   - タイル座標: `{ x: Math.floor(scrollX / tile_size), y: Math.floor(scrollY / tile_size) }`
-
-4. タイル取得・描画ループ
-   - 優先度: 現在viewport内タイル → 次ページプリフェッチ → 前ページプリフェッチ
-   - 並列リクエスト制御（例: 同時6リクエスト、p-queue使用）
-   - タイルURL: `{apiBase}/pamphlet/{id}/page/{page}/tile/{x}/{y}`
-   - Image要素で読み込み:
-     ```js
-     const img = new Image();
-     img.crossOrigin = 'anonymous'; // CORS対応
-     img.src = tileUrl;
-     await img.decode();
-     ctx.drawImage(img, x * tile_size, y * tile_size);
+1. **プログレッシブメタデータ取得**（Cloudflare最適化）
+   - 初回: URLパラメータ周辺6ページのみ取得（`?pages=X-Y`）
+   - バックグラウンド: 残りを50ページずつ並列取得（待機時間なし）
+   - hono/client RPC呼び出し:
+     ```typescript
+     const res = await client.pamphlet[':id'].metadata.$get({
+       param: { id: pamphletId },
+       query: { pages: `${start}-${end}` }
+     });
      ```
 
-5. プリフェッチ戦略
-   - 現在ページの全タイル読み込み完了後、次ページの viewport内タイルをプリフェッチ
-   - IntersectionObserverでスクロール方向を検出し、先読み方向を最適化
+2. **Canvas描画**
+   - devicePixelRatio考慮（高DPI対応）
+   - Canvas transform管理（scale, translate）
+   - プレースホルダー描画 → タイル読み込み順次更新
 
-6. ページネーション
-   - 左右矢印キー、スワイプ、ボタンでページ遷移
-   - ページ遷移時にCanvasクリア → 新ページタイル読み込み
+3. **viewport最適化タイル取得**
+   - viewport内タイルを優先度10で先読み
+   - 残りタイルは優先度1でバックグラウンド取得
+   - TileLoaderクラスで6並列制御（カスタム実装、p-queue不使用）
 
-7. ズーム・パン
-   - Canvas `scale()` でズーム実装
-   - マウスホイール、ピンチジェスチャー対応
-   - パンはCanvasの `translate()` またはスクロール位置調整
+4. **タイル取得（hono/client）**
+   ```typescript
+   const res = await client.pamphlet[':id'].tile[':hash'].$get({
+     param: { id, hash }
+   });
+   const blob = await res.blob();
+   const img = await loadImageFromBlob(blob); // ObjectURL経由
+   ```
 
-8. タイル再利用（重複排除の効果）
-   - タイルがハッシュ命名されているため、同一タイルはキャッシュから再利用される
+5. **モバイル最適化**
+   - TouchHandlerクラスでジェスチャー管理
+   - ピンチズーム: getDistance()で2点間距離計算
+   - スワイプ: 水平移動量でページ遷移判定
+   - ダブルタップ: 300ms以内の2回タップでリセット
+   - passive: true リスナーでスクロール性能向上
 
-**UI要素**
+6. **ページネーション**
+   - lucide-svelte（ChevronLeft/Right）アイコン使用
+   - レスポンシブ: モバイルはアイコンのみ、デスクトップはテキスト付き
+   - キーボード: 左右矢印キー、スワイプ、ボタンでページ遷移
+   - URLパラメータ自動更新（`?page=X`）
 
-- Canvas要素
-- ページネーションコントロール（前へ/次へボタン、ページ番号表示）
-- ズームコントロール（+/-ボタン、スライダー）
-- ローディングインジケーター
+7. **ズーム・パン**
+   - CanvasRendererがtransform管理（setScale, setPan, resetTransform）
+   - ピンチズーム: 0.5x - 5.0x
+   - 2本指パン: ズーム中のみ
+   - ダブルタップ: リセット（scale=1, pan=0）
+
+8. **型安全性**
+   - workers/src/types/api.ts でAppType定義
+   - frontend/src/types/api.ts でre-export
+   - hono/clientで完全型推論（`as any`なし）
+   - svelte-check + tsc でゼロエラー
+
+**UI要素（Tailwind v4）**
+
+- Canvas要素（shadow-lg、max-w-full、max-h-full）
+- ページネーションコントロール（flex、items-center、gap-4）
+- lucide-svelteアイコン（size={20}、モバイル最適化）
+- ローディングオーバーレイ（absolute、inset-0、bg-black/50）
+- レスポンシブデザイン（sm:, md: breakpoints使用）
 
 **パフォーマンス最適化**
 
-- タイルをメモリキャッシュ（Map<url, ImageBitmap>）
-- OffscreenCanvas（Web Worker）で描画処理（オプション）
-- RequestAnimationFrame でスムーズなUI更新
+- タイルメモリキャッシュ（Map<hash, HTMLImageElement>）
+- ObjectURL + revokeObjectURL でメモリリーク防止
+- 優先度キューで viewport内タイル優先
+- Cloudflare向け並列数最適化（6並列、待機時間なし）
+- バックグラウンドメタデータフェッチ（50ページバッチ）
 
 ---
 
@@ -969,25 +1032,48 @@ frontend → wasm/pkg (import)
   - 平均処理時間: 12-15ms（512x512画像、256pxタイル）
   - wasm-pack でnodejsターゲットビルド（テスト用）
 
-### Frontend (Svelte)
+### Frontend (Svelte) - 実装済み
 
-- **Web Component化の注意点**
-  - Shadow DOMは使わない（スタイル隔離が複雑）
-  - `customElement` モードでビルド → 単一JSバンドル
-  - 外部CSSは `<link>` で読み込み、またはインラインスタイル
+- **Web Component化の実装**
+  - ✓ Shadow DOMは使わない（Tailwind v4との互換性のため）
+  - ✓ `customElement: true` でビルド → ESM + UMD バンドル
+  - ✓ Tailwind v4のみでスタイリング（カスタムCSSなし）
+  - ✓ index.htmlにviewport metaタグ設定（モバイル最適化）
 
 - **Canvasパフォーマンス**
-  - `requestAnimationFrame` でスムーズな再描画
-  - タイル描画は `ImageBitmap` を使うとさらに高速（`createImageBitmap(blob)`）
-  - OffscreenCanvas（Web Worker）でバックグラウンド描画（オプション）
+  - ✓ CanvasRendererクラスで描画管理
+  - ✓ devicePixelRatio考慮（高DPI対応）
+  - ✓ Canvas transform（scale, translate）でズーム・パン実装
+  - ✓ ObjectURL経由でImage読み込み → revokeObjectURLでメモリリーク防止
+  - 💡 ImageBitmap、OffscreenCanvasは将来的に検討可能
 
-- **並列取得制御**
-  - `p-queue` または独自実装でリクエスト並列数制限（例: 6並列）
-  - 過剰な並列リクエストはブラウザ・CDNに負荷
+- **並列取得制御（実装済み）**
+  - ✓ TileLoaderクラスで独自実装（p-queue不使用、バンドルサイズ削減）
+  - ✓ 6並列制御（maxConcurrent: 6）
+  - ✓ 優先度キュー（viewport内タイル: 優先度10、残り: 優先度1）
+  - ✓ Cloudflare最適化（待機時間なし、50ページバッチ）
 
-- **メモリリーク防止**
-  - 不要なタイルImageはGCに任せる（参照を保持しない）
-  - Canvas要素が多い場合は適宜破棄
+- **メモリリーク防止（実装済み）**
+  - ✓ Map<hash, HTMLImageElement>でタイルキャッシュ
+  - ✓ ObjectURL作成後、即座にrevokeObjectURL
+  - ✓ 参照を保持しない設計（GC任せ）
+  - ✓ Canvas要素は単一（ページ遷移時にクリア）
+
+- **型安全性（実装済み）**
+  - ✓ hono/clientでRPC-style API呼び出し
+  - ✓ workers/src/types/api.tsでAppType定義
+  - ✓ frontend/src/types/api.tsでre-export
+  - ✓ svelte-check + tsc でゼロエラー
+  - ✓ `as any`なしの完全型推論
+
+- **モバイル最適化（実装済み）**
+  - ✓ TouchHandlerクラスでジェスチャー管理
+  - ✓ passive: true リスナー（スクロール性能向上）
+  - ✓ ピンチズーム: 0.5x-5x
+  - ✓ 2本指パン: ズーム中のみ
+  - ✓ スワイプ: ページ遷移
+  - ✓ ダブルタップ: リセット
+  - ✓ touch-action: none（ブラウザデフォルト動作防止）
 
 ---
 
@@ -1000,11 +1086,21 @@ frontend → wasm/pkg (import)
 - **スケーラビリティ**: 100回連続処理でも性能劣化なし
 - **メモリ効率**: メモリリーク検出なし
 
-### フロントエンド（目標値）
-- **初回表示**: 1秒以内（metadata取得 + 現在viewport タイル取得）
-- **ページ遷移**: 0.5秒以内（プリフェッチ済みの場合は即座）
-- **キャッシュヒット率**: 95%以上（2回目以降のアクセス）
-- **並列タイル取得**: 6-10並列（調整可能）
+### フロントエンド（実装済み・目標値）
+- **初回表示**: 1秒以内（目標）
+  - プログレッシブローディング: 初期6ページのみ取得
+  - viewport内タイル優先読み込み（優先度10）
+  - バックグラウンドで残りページ取得（50ページバッチ、待機時間なし）
+- **ページ遷移**: 0.5秒以内（目標）
+  - メタデータロード済み: 即座にページ切り替え
+  - タイルキャッシュ活用: Map<hash, HTMLImageElement>
+- **キャッシュヒット率**: 95%以上（目標、2回目以降のアクセス）
+  - Cloudflare Edge Cache: タイル30日TTL
+  - ブラウザメモリキャッシュ: タイルMap保持
+- **並列タイル取得**: 6並列（固定、TileLoaderクラス）
+  - maxConcurrent: 6
+  - 優先度キュー実装
+  - Cloudflare最適化（待機時間なし）
 
 ---
 
@@ -1027,11 +1123,17 @@ frontend → wasm/pkg (import)
    - エッジケーステスト（7テスト）
 10. ✓ 型定義の共有化（shared/types/wasm.ts）
 
-### Phase 3: フロント開発
-9. workers/ Hono JSX アップローダーUI実装（src/pages/uploader.tsx）
-10. frontend/ Svelte 5プロジェクト作成
-11. PamphletViewer.svelte 実装（Canvas描画、タイル取得）
-12. Web Component化・ビルド確認
+### Phase 3: フロント開発 ✓ 完了
+9. ✓ workers/ Hono JSX アップローダーUI実装（src/routes/admin.tsx）
+10. ✓ frontend/ Svelte 5 + Vite 6 + Tailwind v4 セットアップ
+11. ✓ PamphletViewer.svelte 実装（Canvas描画、タイル取得）
+12. ✓ Web Component化・ビルド確認（`<pamphlet-viewer>`）
+13. ✓ hono/client による型安全なAPI呼び出し実装
+14. ✓ プログレッシブローディング戦略実装（初期6ページ → バックグラウンドで残り）
+15. ✓ モバイル最適化（ピンチズーム、スワイプ、タッチジェスチャー）
+16. ✓ lucide-svelte アイコン統合
+17. ✓ コード分割（hooks: usePamphletViewer, useTouchGestures / components: ViewerCanvas, PaginationControls, LoadingOverlay）
+18. ✓ 型チェック完全パス（svelte-check + tsc）
 
 ### Phase 4: 統合
 13. /upload エンドポイント実装（ZIP展開、R2書き込み）
@@ -1052,8 +1154,11 @@ frontend → wasm/pkg (import)
 
 - [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
 - [Hono Web Framework](https://hono.dev/)
+- [hono/client RPC](https://hono.dev/docs/guides/rpc) - 型安全なAPI呼び出し
 - [wasm-bindgen Guide](https://rustwasm.github.io/wasm-bindgen/)
-- [Svelte 5 Docs](https://svelte-5-preview.vercel.app/)
+- [Svelte 5 Docs](https://svelte.dev/docs/svelte/overview) - 最新のrunes（$state, $derived, $effect）
+- [Tailwind CSS v4](https://tailwindcss.com/blog/tailwindcss-v4-beta) - ベータ版ドキュメント
+- [lucide-svelte](https://lucide.dev/guide/packages/lucide-svelte) - Svelteアイコンライブラリ
 - [Cache API (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/Cache)
 - [R2 Documentation](https://developers.cloudflare.com/r2/)
 - [Workers KV](https://developers.cloudflare.com/kv/)

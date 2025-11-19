@@ -1,0 +1,30 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "svelte-check": "svelte-check",
+    "check": "svelte-check && tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.10.6",
+    "lucide-svelte": "^0.554.0",
+    "svelte": "^5.1.9"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.1",
+    "@tailwindcss/vite": "^4.0.0-beta.5",
+    "@types/node": "^22.10.1",
+    "shared": "workspace:*",
+    "svelte-check": "^4.3.4",
+    "tailwindcss": "^4.0.0-beta.5",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.1",
+    "workers": "workspace:*"
+  }
+}
