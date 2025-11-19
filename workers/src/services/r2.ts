@@ -101,12 +101,12 @@ export async function getMetadata(env: Env, pamphletId: string): Promise<unknown
  * Delete a pamphlet and all its tiles
  * @param env Environment bindings
  * @param pamphletId Pamphlet ID
- * @returns Number of objects deleted
+ * @returns Total number of objects deleted (includes metadata and all tiles)
  */
 export async function deletePamphlet(env: Env, pamphletId: string): Promise<number> {
   const prefix = `pamphlets/${pamphletId}/`;
+  let cursor: string | undefined = undefined;
   let totalDeleted = 0;
-  let cursor: string | undefined;
 
   // R2 list() returns max 1000 objects per call, so we need pagination
   do {
@@ -117,12 +117,13 @@ export async function deletePamphlet(env: Env, pamphletId: string): Promise<numb
     });
 
     if (list.objects.length > 0) {
-      // Use deleteMultiple() to delete up to 1000 objects in a single call
+      // Use R2's batch delete API to delete up to 1000 objects in a single call
       const keys = list.objects.map((obj) => obj.key);
       await env.R2_BUCKET.delete(keys);
       totalDeleted += keys.length;
     }
 
+    // Check if there are more objects to delete
     cursor = list.truncated ? list.cursor : undefined;
   } while (cursor);
 

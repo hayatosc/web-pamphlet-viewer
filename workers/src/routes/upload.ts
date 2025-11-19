@@ -1,8 +1,8 @@
 /**
  * Upload Router
- * Chunked upload strategy:
- * 1. POST /tiles - Upload tiles in chunks (multiple calls)
- * 2. POST /complete - Finalize upload with metadata
+ * POST /admin/upload - Legacy multipart upload (with tile files)
+ * POST /admin/upload/tiles - Chunked tile upload
+ * POST /admin/upload/complete - Finalize upload with metadata
  */
 
 import { Hono } from 'hono';
@@ -14,10 +14,17 @@ import {
 } from 'shared/schemas/pamphlet';
 import * as r2Service from '../services/r2';
 
+/**
+ * R2 upload chunk size to avoid API rate limits
+ * Server processes tiles in batches of this size
+ */
+const R2_UPLOAD_CHUNK_SIZE = 50;
+
 const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
   /**
    * POST /tiles - Upload a chunk of tiles
    * Can be called multiple times for the same pamphlet
+   * Validates tiles against metadata before upload
    */
   .post('/tiles', async (c) => {
     try {
@@ -29,14 +36,36 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
         return c.json({ error: 'Missing id field' }, 400);
       }
 
+      // Get metadata if provided (for validation)
+      const metadataField = formData.get('metadata');
+      let expectedHashes: Set<string> | null = null;
+
+      if (metadataField && typeof metadataField === 'string') {
+        try {
+          const parsedMetadata = JSON.parse(metadataField);
+          const metadataValidation = uploadMetadataSchema.safeParse(parsedMetadata);
+
+          if (metadataValidation.success) {
+            // Extract all expected tile hashes from metadata
+            expectedHashes = new Set<string>();
+            for (const page of metadataValidation.data.pages) {
+              for (const tile of page.tiles) {
+                expectedHashes.add(tile.hash.toLowerCase());
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to parse metadata for validation:', error);
+        }
+      }
+
       // Upload all tiles in this chunk
       const uploadedHashes: string[] = [];
-      const CHUNK_SIZE = 50;
       const tilesToUpload: Array<{ hash: string; data: ArrayBuffer }> = [];
 
       for (const [key, value] of formData.entries()) {
-        // Skip id field
-        if (key === 'id') continue;
+        // Skip id and metadata fields
+        if (key === 'id' || key === 'metadata') continue;
 
         // Parse tile key: "tile-{hash}"
         const match = key.match(/^tile-([a-f0-9]{64})$/i);
@@ -46,13 +75,20 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
         }
 
         const hash = match[1].toLowerCase();
+
+        // Validate against metadata if available
+        if (expectedHashes && !expectedHashes.has(hash)) {
+          console.warn(`Skipping tile not in metadata: ${hash}`);
+          continue;
+        }
+
         const arrayBuffer = await value.arrayBuffer();
         tilesToUpload.push({ hash, data: arrayBuffer });
       }
 
       // Upload tiles in sub-chunks to avoid R2 API limits
-      for (let i = 0; i < tilesToUpload.length; i += CHUNK_SIZE) {
-        const chunk = tilesToUpload.slice(i, i + CHUNK_SIZE);
+      for (let i = 0; i < tilesToUpload.length; i += R2_UPLOAD_CHUNK_SIZE) {
+        const chunk = tilesToUpload.slice(i, i + R2_UPLOAD_CHUNK_SIZE);
         const uploadPromises = chunk.map(({ hash, data }) =>
           r2Service.putTile(c.env, idField, hash, data).then(() => hash)
         );
@@ -72,26 +108,27 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
     }
   })
   /**
-   * POST /complete - Finalize upload with metadata
+   * POST /complete - Finalize upload with metadata only
+   * Called after all tile chunks have been uploaded via /tiles
    */
   .post('/complete', async (c) => {
     try {
       const body = await c.req.json();
 
       // Validate request body
-      const validation = uploadFormDataSchema.safeParse(body);
-      if (!validation.success) {
+      const formDataValidation = uploadFormDataSchema.safeParse(body);
+      if (!formDataValidation.success) {
         return c.json(
-          { error: 'Invalid request body', details: validation.error.issues },
+          { error: 'Invalid request data', details: formDataValidation.error.issues },
           400
         );
       }
 
-      const { id, metadata: validatedMetadata } = validation.data;
+      const { id, metadata: metadataWithoutVersion } = formDataValidation.data;
 
       // Update metadata version with current timestamp
       const metadata: Metadata = {
-        ...validatedMetadata,
+        ...metadataWithoutVersion,
         version: Date.now(),
       };
 
@@ -109,8 +146,8 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
     }
   })
   /**
-   * POST / - Legacy endpoint (kept for backward compatibility)
-   * Will be deprecated in favor of chunked upload
+   * POST / - Legacy: Handle multipart upload (with tile files and metadata)
+   * For backward compatibility. New implementations should use /tiles + /complete
    */
   .post('/', async (c) => {
     try {

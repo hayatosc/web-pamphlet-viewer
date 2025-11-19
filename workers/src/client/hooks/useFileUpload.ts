@@ -1,9 +1,18 @@
 import type { ProcessedPage, UploadResponse } from '../types';
 
 /**
- * Upload tiles in chunks to avoid payload size limits
- * Strategy: Upload tiles in batches, then finalize with metadata
+ * Client-side chunk size for batching tile uploads
+ * The server-side /tiles endpoint uses R2_UPLOAD_CHUNK_SIZE=50 and will further split as needed
+ * See PR description for rationale on different chunk sizes
  */
+const CLIENT_CHUNK_SIZE = 100;
+
+/**
+ * Maximum progress percentage allocated to tile uploads
+ * Remaining percentage is reserved for metadata upload
+ */
+const TILE_UPLOAD_PROGRESS_MAX = 90;
+
 export async function uploadTiles(
 	pages: ProcessedPage[],
 	pamphletId: string,
@@ -31,7 +40,7 @@ export async function uploadTiles(
 		})),
 	};
 
-	// Collect unique tiles (deduplication)
+	// Collect unique tiles (hash-based deduplication)
 	const uniqueTiles = new Map<string, Uint8Array>();
 	for (const page of pages) {
 		for (const tile of page.tiles) {
@@ -42,19 +51,24 @@ export async function uploadTiles(
 	}
 
 	const totalTiles = uniqueTiles.size;
-	const CHUNK_SIZE = 100; // Upload 100 tiles per request
 	const tiles = Array.from(uniqueTiles.entries());
 	let uploadedTiles = 0;
 
 	// Upload tiles in chunks
-	for (let i = 0; i < tiles.length; i += CHUNK_SIZE) {
-		const chunk = tiles.slice(i, i + CHUNK_SIZE);
+	for (let i = 0; i < tiles.length; i += CLIENT_CHUNK_SIZE) {
+		const chunk = tiles.slice(i, i + CLIENT_CHUNK_SIZE);
 		const formData = new FormData();
 		formData.append('id', pamphletId);
 
+		// Add metadata to first chunk for server-side validation (optional)
+		if (i === 0) {
+			formData.append('metadata', JSON.stringify(metadata));
+		}
+
 		// Add tiles to FormData
 		for (const [hash, data] of chunk) {
-			const blob = new Blob([data.buffer as ArrayBuffer], { type: 'image/webp' });
+			// Pass Uint8Array directly to Blob constructor (no need for .buffer)
+			const blob = new Blob([data], { type: 'image/webp' });
 			formData.append(`tile-${hash}`, blob);
 		}
 
@@ -70,7 +84,7 @@ export async function uploadTiles(
 		}
 
 		uploadedTiles += chunk.length;
-		const progress = Math.floor((uploadedTiles / totalTiles) * 90); // Reserve 10% for metadata
+		const progress = Math.floor((uploadedTiles / totalTiles) * TILE_UPLOAD_PROGRESS_MAX);
 		onProgress(progress);
 	}
 
