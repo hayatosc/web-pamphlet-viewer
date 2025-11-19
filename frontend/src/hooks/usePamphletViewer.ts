@@ -1,4 +1,5 @@
-import { createApiClient } from '../lib/api-client';
+import { hc } from 'hono/client';
+import type { AppType } from 'workers';
 import { TileLoader } from '../lib/tile-loader';
 import { CanvasRenderer } from '../lib/canvas-renderer';
 import { calculateViewportBounds, getVisibleTiles } from '../lib/viewport';
@@ -50,7 +51,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
    */
   async function fetchMetadataRange(start: number, end: number): Promise<void> {
     try {
-      const client = createApiClient(apiBase);
+      const client = hc<AppType>(apiBase);
       const res = await client.pamphlet[':id'].metadata.$get({
         param: { id: pamphletId },
         query: { pages: `${start}-${end}` }

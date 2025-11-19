@@ -1,5 +1,6 @@
 import type { Tile } from '../types/metadata';
-import { createApiClient } from './api-client';
+import { hc } from 'hono/client';
+import type { AppType } from 'workers';
 
 /**
  * タイル読み込みタスク
@@ -126,7 +127,7 @@ export class TileLoader {
    * 画像を取得（hono/client RPC使用）
    */
   private async fetchImage(hash: string): Promise<HTMLImageElement> {
-    const client = createApiClient(this.apiBase);
+    const client = hc<AppType>(this.apiBase);
 
     const res = await client.pamphlet[':id'].tile[':hash'].$get({
       param: { id: this.pamphletId, hash }

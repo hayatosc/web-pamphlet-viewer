@@ -3,6 +3,7 @@
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
+	"types": "./dist/types/workers/src/index.d.ts",
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
@@ -10,7 +11,8 @@
 		"deploy": "pnpm build && wrangler deploy",
 		"start": "vite",
 		"test": "vitest",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"build:types": "tsc -p tsconfig.types.json"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.14.2",

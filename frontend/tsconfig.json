@@ -23,7 +23,11 @@
     /* Svelte */
     "types": ["vite/client"],
     "allowJs": true,
-    "checkJs": true
+    "checkJs": true,
+    "baseUrl": ".",
+    "paths": {
+      "shared/*": ["../shared/src/*", "../shared/src/*.ts"]
+    }
   },
   "include": [
     "src/**/*.ts",
@@ -34,7 +38,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "../wasm/**/*",
-    "../shared/**/*"
+    "../wasm/**/*"
   ]
 }

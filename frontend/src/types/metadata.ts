@@ -21,7 +21,7 @@ export interface Page {
  * メタデータ
  */
 export interface Metadata {
-  version: string;
+  version: number;
   tile_size: number;
   pages: Page[];
 }
