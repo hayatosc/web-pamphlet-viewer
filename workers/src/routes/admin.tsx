@@ -24,11 +24,11 @@ const admin = new Hono<{ Bindings: Env; Variables: Variables }>()
 	})
 	.route('/upload', upload)
 	/**
-	 * DELETE /admin/delete/:id
+	 * GET /admin/delete/:id **PLEASE DO NOT CHANGE METHOD**
 	 * Delete pamphlet data (R2) and metadata cache
 	 * Tile caches are not deleted (30-day TTL expiry)
 	 */
-	.delete('/delete/:id', async (c) => {
+	.get('/delete/:id', async (c) => {
 		const pamphletId = c.req.param('id');
 
 		if (!pamphletId) {
