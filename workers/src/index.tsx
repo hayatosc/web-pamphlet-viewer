@@ -34,9 +34,11 @@ app.use('*', async (c, next) => {
 	}
 });
 
-// Redirect root to admin page
 app.get('/', (c) => {
-	return c.redirect('/admin', 302);
+	return c.json({
+		status: 'ok',
+		current: Date.now(),
+	});
 });
 
 // Mount routers and configure handlers
