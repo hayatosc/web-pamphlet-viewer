@@ -16,10 +16,11 @@
   class="flex-1 relative overflow-hidden"
   style="touch-action: none; -webkit-user-select: none; user-select: none;"
 >
-  <div class="absolute inset-0 flex items-center justify-center">
+  <div class="absolute inset-0 flex items-center justify-center p-4">
     <canvas
       bind:this={canvasElement}
-      class="max-w-full max-h-full shadow-lg"
+      class="shadow-lg"
+      style="max-width: 100%; max-height: 100%;"
     ></canvas>
   </div>
 </div>

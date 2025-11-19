@@ -144,6 +144,72 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
+   * 隣接ページをプリフェッチ（バックグラウンド）
+   */
+  function prefetchAdjacentPages(currentPageNum: number): void {
+    if (!metadata || !tileLoader || !renderer) return;
+
+    // プリフェッチ対象: 前後1ページ
+    const pagesToPrefetch = [currentPageNum - 1, currentPageNum + 1];
+
+    pagesToPrefetch.forEach((pageNum) => {
+      // 範囲チェック
+      if (pageNum < 0 || pageNum >= totalPagesCount) return;
+
+      // すでにCanvasキャッシュされているかチェック
+      const cacheStats = renderer!.getCacheStats();
+      if (cacheStats.pages.includes(pageNum)) {
+        console.log(`[prefetch] Page ${pageNum} already cached, skipping`);
+        return;
+      }
+
+      // メタデータが取得済みかチェック
+      const pageData = metadata!.pages.find((p) => p.page === pageNum);
+      if (!pageData) {
+        console.log(`[prefetch] Page ${pageNum} metadata not loaded yet, skipping`);
+        return;
+      }
+
+      // バックグラウンドでタイルをプリフェッチ（低優先度: 1）
+      console.log(`[prefetch] Prefetching page ${pageNum} (${pageData.tiles.length} tiles)`);
+      (async () => {
+        try {
+          const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = await Promise.all(
+            pageData.tiles.map(async (tile) => ({
+              tile,
+              img: await tileLoader!.loadTile(tile, 1), // 低優先度
+            }))
+          );
+
+          // プリフェッチしたページをCanvasキャッシュに保存
+          // 一時的なOffscreenCanvasを使用
+          const offscreen = new OffscreenCanvas(pageData.width, pageData.height);
+          const ctx = offscreen.getContext('2d');
+          if (!ctx) return;
+
+          // 背景
+          ctx.fillStyle = '#f9fafb';
+          ctx.fillRect(0, 0, pageData.width, pageData.height);
+
+          // タイル描画
+          const tileSize = metadata!.tile_size;
+          for (const { tile, img } of tiles) {
+            const x = tile.x * tileSize;
+            const y = tile.y * tileSize;
+            ctx.drawImage(img, x, y, tileSize, tileSize);
+          }
+
+          // ページキャッシュに保存
+          renderer!['pageCache'].set(pageNum, offscreen);
+          console.log(`[prefetch] Page ${pageNum} cached successfully`);
+        } catch (err) {
+          console.error(`[prefetch] Failed to prefetch page ${pageNum}:`, err);
+        }
+      })();
+    });
+  }
+
+  /**
    * ページを初期化
    */
   async function initializePage(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
@@ -158,30 +224,30 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     const cacheStats = renderer.getCacheStats();
     if (cacheStats.pages.includes(pageData.page)) {
       console.log(`[usePamphletViewer] Page ${pageData.page} is cached, rendering immediately`);
-      loading = true;
 
-      // すべてのタイルを並列読み込み（キャッシュから高速）
-      const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = await Promise.all(
-        pageData.tiles.map(async (tile) => ({
-          tile,
-          img: await tileLoader.loadTile(tile, 10),
-        }))
-      );
-
-      // ページを描画（キャッシュから復元）
-      renderer.renderPage(pageData.page, pageData.width, pageData.height, tiles);
+      // loading状態をfalseに設定（即座に表示）
       loading = false;
+
+      // タイルの再取得は不要、Canvasキャッシュから直接描画
+      // 空の配列を渡すことで、renderPageはキャッシュから復元する
+      renderer.renderPage(pageData.page, pageData.width, pageData.height, []);
+
+      // プリフェッチ: 次のページを先読み
+      prefetchAdjacentPages(pageData.page);
       return;
     }
 
     // キャッシュにない場合: タイルを読み込み
-    await loadPageTiles(pageData, canvasElement);
+    await loadPageTiles(pageData);
+
+    // 読み込み完了後、隣接ページをプリフェッチ
+    prefetchAdjacentPages(pageData.page);
   }
 
   /**
    * ページのタイルを読み込み（初回描画用）
    */
-  async function loadPageTiles(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
+  async function loadPageTiles(pageData: Page): Promise<void> {
     if (!renderer || !tileLoader) return;
 
     // 前のページの描画をキャンセル（タイルダウンロードは続行してキャッシュに保存）
@@ -254,7 +320,24 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     currentPage = page;
     updateUrlParam(page);
 
-    const pageData = metadata.pages.find((p) => p.page === page);
+    let pageData = metadata.pages.find((p) => p.page === page);
+
+    // メタデータが未ロードの場合は取得
+    if (!pageData) {
+      console.log(`[goToPage] Page ${page} metadata not loaded, fetching...`);
+      loading = true;
+
+      try {
+        await fetchMetadataRange(page, page);
+        pageData = metadata.pages.find((p) => p.page === page);
+      } catch (err) {
+        console.error(`Failed to fetch metadata for page ${page}:`, err);
+        error = 'Failed to load page metadata';
+        loading = false;
+        return;
+      }
+    }
+
     if (pageData) {
       await initializePage(pageData, canvasElement);
     }

@@ -1,9 +1,9 @@
-<svelte:options customElement="pamphlet-viewer" />
+<svelte:options customElement={{ tag: "pamphlet-viewer", shadow: "none" }} />
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { usePamphletViewer } from '../hooks/usePamphletViewer';
-  import { useTouchGestures } from '../hooks/useTouchGestures';
+  import { usePamphletViewer } from '../hooks/usePamphletViewer.svelte';
+  import { useTouchGestures } from '../hooks/useTouchGestures.svelte';
   import ViewerCanvas from './ViewerCanvas.svelte';
   import PaginationControls from './PaginationControls.svelte';
   import LoadingOverlay from './LoadingOverlay.svelte';
@@ -79,13 +79,15 @@
     };
   });
 
-  // ページ変更時
-  $effect(() => {
-    if (viewer.metadata && viewer.currentPageData && viewer.renderer && canvasElement) {
-      viewer.initializePage(viewer.currentPageData, canvasElement);
-    }
-  });
 </script>
+
+<style>
+  :global(pamphlet-viewer) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>
 
 <div class="relative w-full h-full flex flex-col bg-gray-50">
   {#if !viewer.metadata && (viewer.loading || viewer.error)}
@@ -93,14 +95,14 @@
       loading={viewer.loading}
       error={viewer.error}
     />
-  {:else if viewer.metadata && viewer.currentPageData}
+  {:else if viewer.metadata}
     <ViewerCanvas
       bind:canvasElement
       bind:containerElement
     />
 
     <LoadingOverlay
-      loading={viewer.loading}
+      loading={viewer.loading || !viewer.currentPageData}
       loadingTiles={viewer.loadingTiles}
       totalTiles={viewer.totalTiles}
     />
