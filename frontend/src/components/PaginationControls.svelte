@@ -25,11 +25,10 @@
   <button
     onclick={onPrev}
     disabled={!canGoPrev}
-    class="flex items-center justify-center gap-2 px-4 py-3 min-w-[44px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
+    class="flex items-center justify-center px-4 py-3 min-w-11 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
     aria-label="Previous page"
   >
     <ChevronLeft size={20} />
-    <span class="hidden md:inline">Previous</span>
   </button>
 
   <span class="text-sm md:text-base text-gray-600 whitespace-nowrap font-medium min-w-20 text-center tabular-nums">
@@ -39,10 +38,9 @@
   <button
     onclick={onNext}
     disabled={!canGoNext}
-    class="flex items-center justify-center gap-2 px-4 py-3 min-w-[44px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
+    class="flex items-center justify-center px-4 py-3 min-w-11 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
     aria-label="Next page"
   >
-    <span class="hidden md:inline">Next</span>
     <ChevronRight size={20} />
   </button>
 </div>
