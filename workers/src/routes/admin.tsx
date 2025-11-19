@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
-import type { Metadata } from 'shared/types/wasm';
 import { Script, ViteClient } from 'vite-ssr-components/hono';
-import { loadMetadata } from '../middleware/metadata';
 import { deleteFromCache } from '../services/cache';
 import * as r2Service from '../services/r2';
 import type { Env, Variables } from '../types/bindings';
@@ -27,9 +25,10 @@ const admin = new Hono<{ Bindings: Env; Variables: Variables }>()
 	.route('/upload', upload)
 	/**
 	 * DELETE /admin/delete/:id
-	 * Delete pamphlet data (R2) and caches
+	 * Delete pamphlet data (R2) and metadata cache
+	 * Tile caches are not deleted (30-day TTL expiry)
 	 */
-	.get('/delete/:id', loadMetadata, async (c) => {
+	.delete('/delete/:id', async (c) => {
 		const pamphletId = c.req.param('id');
 
 		if (!pamphletId) {
@@ -37,45 +36,27 @@ const admin = new Hono<{ Bindings: Env; Variables: Variables }>()
 		}
 
 		try {
-			// 1. Get metadata from context (loaded by middleware)
-			const metadata = c.get('metadata') as Metadata;
+			// 1. Delete all R2 objects (metadata + tiles)
+			// This is the most important step - removes actual data
+			// Uses R2's batch delete API to efficiently delete up to 1000 objects per call
+			const deletedCount = await r2Service.deletePamphlet(c.env, pamphletId);
 
-			// 2. Collect all unique tile hashes for cache deletion
-			const tileHashes = new Set<string>();
-			for (const page of metadata.pages) {
-				for (const tile of page.tiles) {
-					tileHashes.add(tile.hash);
-				}
-			}
-
-			// 3. Delete all R2 objects (metadata + tiles)
-			await r2Service.deletePamphlet(c.env, pamphletId);
-
-			// 4. Delete metadata cache
+			// 2. Delete metadata cache
 			const metadataUrl = new URL(c.req.url);
 			metadataUrl.pathname = `/pamphlet/${pamphletId}/metadata`;
 			const metadataCacheDeleted = await deleteFromCache(metadataUrl.toString());
 
-			// 5. Delete tile caches in parallel
-			const deleteCachePromises = Array.from(tileHashes).map(async (hash) => {
-				const tileUrl = new URL(c.req.url);
-				tileUrl.pathname = `/pamphlet/${pamphletId}/tile/${hash}`;
-				const deleted = await deleteFromCache(tileUrl.toString());
-				return deleted ? 1 : 0;
-			});
-
-			const results = await Promise.all(deleteCachePromises);
-			const tileCachesDeleted = results.reduce<number>((sum, count) => sum + count, 0);
+			// Note: Tile caches are NOT deleted here
+			// They will expire naturally after 30 days (CDN-Cache-Control: max-age=2592000)
+			// This avoids the overhead of deleting potentially thousands of tile caches
 
 			return c.json({
 				id: pamphletId,
 				status: 'ok',
 				message: 'Pamphlet deleted successfully',
 				deleted: {
-					r2: true,
+					r2Objects: deletedCount,
 					metadataCache: metadataCacheDeleted,
-					tileCaches: tileCachesDeleted,
-					totalCaches: metadataCacheDeleted ? tileCachesDeleted + 1 : tileCachesDeleted,
 				},
 			});
 		} catch (error) {
