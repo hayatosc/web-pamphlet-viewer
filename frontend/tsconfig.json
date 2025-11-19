@@ -25,6 +25,16 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "src/**/*.d.ts"],
-  "exclude": ["node_modules", "dist", "../workers/**/*", "../wasm/**/*", "../shared/**/*"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.d.ts",
+    "../workers/src/types/api.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../wasm/**/*",
+    "../shared/**/*"
+  ]
 }

@@ -51,7 +51,16 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   async function fetchMetadataRange(start: number, end: number): Promise<void> {
     try {
       const client = createApiClient(apiBase);
-      const data = await client.fetchMetadata(pamphletId, `${start}-${end}`);
+      const res = await client.pamphlet[':id'].metadata.$get({
+        param: { id: pamphletId },
+        query: { pages: `${start}-${end}` }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch metadata: ${res.statusText}`);
+      }
+
+      const data = await res.json();
 
       // 全ページ数を保存
       totalPagesCount = data.total_pages;
