@@ -15,7 +15,6 @@ export class CanvasRenderer {
   private pageWidth = 0;
   private pageHeight = 0;
   private pageCache: PageCache;
-  private currentPageNumber = -1;
   private fixedContainerHeight = 0; // 初回計算時のコンテナ高さを保存
 
   constructor(canvas: HTMLCanvasElement, tileSize: number, cacheSize = 5) {
@@ -74,7 +73,6 @@ export class CanvasRenderer {
     pageHeight: number,
     tiles: Array<{ tile: Tile; img: HTMLImageElement }>
   ): void {
-    this.currentPageNumber = pageNumber;
     this.pageWidth = pageWidth;
     this.pageHeight = pageHeight;
 

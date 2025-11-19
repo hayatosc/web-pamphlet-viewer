@@ -238,7 +238,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     }
 
     // キャッシュにない場合: タイルを読み込み
-    await loadPageTiles(pageData, canvasElement);
+    await loadPageTiles(pageData);
 
     // 読み込み完了後、隣接ページをプリフェッチ
     prefetchAdjacentPages(pageData.page);
@@ -247,7 +247,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   /**
    * ページのタイルを読み込み（初回描画用）
    */
-  async function loadPageTiles(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
+  async function loadPageTiles(pageData: Page): Promise<void> {
     if (!renderer || !tileLoader) return;
 
     // 前のページの描画をキャンセル（タイルダウンロードは続行してキャッシュに保存）
