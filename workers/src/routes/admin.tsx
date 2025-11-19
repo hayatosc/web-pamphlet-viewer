@@ -53,7 +53,7 @@ const admin = new Hono<{ Bindings: Env; Variables: Variables }>()
 			return c.json({
 				id: pamphletId,
 				status: 'ok',
-				message: 'Pamphlet deleted successfully',
+				message: 'Pamphlet deleted successfully (tile caches will expire in 30 days)',
 				deleted: {
 					r2Objects: deletedCount,
 					metadataCache: metadataCacheDeleted,

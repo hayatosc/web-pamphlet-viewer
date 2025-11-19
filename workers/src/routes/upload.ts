@@ -208,8 +208,8 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
 
       const validatedFormData = formDataValidation.data;
 
-      // Upload tiles to R2 in parallel
-      const uploadPromises: Promise<unknown>[] = [];
+      // Collect all tiles to upload
+      const tilesToUpload: Array<{ hash: string; data: ArrayBuffer }> = [];
 
       for (const [key, value] of formData.entries()) {
         // Skip metadata and id fields
@@ -230,13 +230,21 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
           continue;
         }
 
-        // Upload tile to R2
+        // Prepare tile for upload
         const arrayBuffer = await value.arrayBuffer();
-        uploadPromises.push(r2Service.putTile(c.env, validatedFormData.id, hash, arrayBuffer));
+        tilesToUpload.push({ hash, data: arrayBuffer });
       }
 
-      // Wait for all uploads to complete
-      await Promise.all(uploadPromises);
+      // Upload tiles in chunks to avoid R2 API rate limits
+      // Process 50 tiles at a time to stay under Workers limits
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < tilesToUpload.length; i += CHUNK_SIZE) {
+        const chunk = tilesToUpload.slice(i, i + CHUNK_SIZE);
+        const uploadPromises = chunk.map(({ hash, data }) =>
+          r2Service.putTile(c.env, validatedFormData.id, hash, data)
+        );
+        await Promise.all(uploadPromises);
+      }
 
       // Update metadata version with current timestamp
       const metadata: Metadata = {
