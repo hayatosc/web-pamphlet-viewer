@@ -81,6 +81,7 @@ export class TouchHandler {
       // ダブルタップ検出
       const now = Date.now();
       if (now - this.lastTapTime < this.doubleTapDelay) {
+        e.preventDefault(); // ブラウザのデフォルトズームを防止
         this.callbacks.onDoubleTap?.();
         this.lastTapTime = 0; // リセット
       } else {
@@ -162,7 +163,7 @@ export class TouchHandler {
       this.initialDistance = 0;
     } else if (e.touches.length === 1) {
       // 2本指から1本指になった（ピンチズーム終了）
-      this.currentScale = this.getCurrentScale();
+      // currentScaleは既にonZoomコールバック内で更新されているため、ここでの処理は不要
       this.initialDistance = 0;
 
       // 1本指になったので、パン可能状態を更新
