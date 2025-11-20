@@ -14,18 +14,6 @@ export function useTouchGestures(
   let touchHandler = $state<TouchHandler | null>(null);
 
   /**
-   * ズーム処理
-   */
-  async function handleZoom(scale: number): Promise<void> {
-    if (!renderer) return;
-
-    renderer.setScale(scale);
-    touchHandler?.setScale(scale);
-
-    await onRedraw();
-  }
-
-  /**
    * パン処理
    */
   async function handlePan(deltaX: number, deltaY: number): Promise<void> {
@@ -37,13 +25,12 @@ export function useTouchGestures(
   }
 
   /**
-   * ダブルタップ処理（ズームリセット）
+   * ダブルタップ処理（リセット）
    */
   async function handleDoubleTap(): Promise<void> {
     if (!renderer) return;
 
     renderer.resetTransform();
-    touchHandler?.setScale(1);
 
     await onRedraw();
   }
@@ -55,7 +42,6 @@ export function useTouchGestures(
     if (!containerElement) return;
 
     touchHandler = new TouchHandler(containerElement, {
-      onZoom: handleZoom,
       onPan: handlePan,
       onSwipeLeft: onNextPage,
       onSwipeRight: onPrevPage,
