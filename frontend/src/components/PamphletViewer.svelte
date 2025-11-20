@@ -81,18 +81,6 @@
       viewer.fetchRemainingMetadata();
     })();
 
-    // タッチジェスチャー初期化
-    if (containerElement) {
-      touchGestures = useTouchGestures(
-        containerElement,
-        viewer.renderer,
-        () => canvasElement && viewer.nextPage(canvasElement),
-        () => canvasElement && viewer.prevPage(canvasElement),
-        () => viewer.redrawCurrentPage()
-      );
-      touchGestures.initialize();
-    }
-
     // キーボードイベント
     window.addEventListener('keydown', handleKeydown);
 
@@ -101,8 +89,26 @@
       if (mediaQuery) {
         mediaQuery.removeEventListener('change', handleMediaChange);
       }
-      touchGestures?.cleanup();
     };
+  });
+
+  // タッチジェスチャー初期化（containerElementとrendererが準備できた後）
+  $effect(() => {
+    if (containerElement && viewer.renderer) {
+      const gestures = useTouchGestures(
+        containerElement,
+        viewer.renderer,
+        () => canvasElement && viewer.nextPage(canvasElement),
+        () => canvasElement && viewer.prevPage(canvasElement),
+        () => viewer.redrawCurrentPage()
+      );
+      gestures.initialize();
+      touchGestures = gestures;
+
+      return () => {
+        gestures.cleanup();
+      };
+    }
   });
 
 </script>

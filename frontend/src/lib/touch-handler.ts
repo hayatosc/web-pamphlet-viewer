@@ -187,13 +187,6 @@ export class TouchHandler {
   }
 
   /**
-   * 現在のスケールを取得（外部から更新）
-   */
-  private getCurrentScale(): number {
-    return this.currentScale;
-  }
-
-  /**
    * スケールを設定（外部から呼ばれる）
    */
   setScale(scale: number): void {
