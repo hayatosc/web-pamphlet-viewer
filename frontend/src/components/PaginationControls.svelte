@@ -27,7 +27,7 @@
   } = $props();
 
   // ズームボタンのdisabled状態
-  const canZoomOut = $derived(currentScale > 0.5);
+  const canZoomOut = $derived(currentScale > 1);
   const canZoomIn = $derived(currentScale < 5);
 </script>
 

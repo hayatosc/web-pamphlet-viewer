@@ -66,7 +66,7 @@
     if (!viewer.renderer) return;
 
     const scale = viewer.renderer.getScale();
-    const newScale = Math.max(scale - 0.2, 0.5); // 最小0.5倍
+    const newScale = Math.max(scale - 0.2, 1); // 最小1倍
     viewer.renderer.setScale(newScale);
     currentScale = newScale;
     viewer.redrawCurrentPage();

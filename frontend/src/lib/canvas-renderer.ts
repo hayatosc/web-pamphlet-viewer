@@ -324,7 +324,7 @@ export class CanvasRenderer {
    * ズーム設定
    */
   setScale(scale: number): void {
-    this.scale = Math.max(0.5, Math.min(5, scale));
+    this.scale = Math.max(1, Math.min(5, scale));
   }
 
   /**
