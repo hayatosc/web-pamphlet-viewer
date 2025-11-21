@@ -11,12 +11,13 @@ export default defineConfig({
     lib: {
       entry: './src/main.ts',
       name: 'PamphletViewer',
-      formats: ['es', 'umd'],
-      fileName: (format) => `pamphlet-viewer.${format}.js`
+      formats: ['es']
     },
     rollupOptions: {
       output: {
-        assetFileNames: 'pamphlet-viewer.[ext]'
+        entryFileNames: 'pamphlet-viewer.[hash].js',
+        chunkFileNames: 'pamphlet-viewer.[hash].js',
+        assetFileNames: 'pamphlet-viewer.[hash].[ext]'
       }
     }
   }
