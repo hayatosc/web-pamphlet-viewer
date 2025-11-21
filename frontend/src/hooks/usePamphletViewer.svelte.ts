@@ -576,12 +576,52 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
-   * 現在のページを再描画
+   * 現在のページを再描画（見開き対応）
    */
   async function redrawCurrentPage(): Promise<void> {
-    if (!renderer || !currentPageData || !tileLoader) return;
+    if (!renderer || !tileLoader || !metadata) return;
 
     renderer.clear();
+
+    // 見開きモードかチェック
+    const spread = currentSpread;
+
+    if (isSpreadMode && spread.leftPage !== null && spread.rightPage !== null) {
+      // 見開きモード: 左右両方のページを再描画
+      const leftPageData = metadata.pages.find((p) => p.page === spread.leftPage);
+      const rightPageData = metadata.pages.find((p) => p.page === spread.rightPage);
+
+      if (leftPageData && rightPageData) {
+        // 左右のタイルを読み込み（キャッシュから取得されるはず）
+        const leftTiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
+        const rightTiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
+
+        for (const tile of leftPageData.tiles) {
+          try {
+            const img = await tileLoader.loadTile(tile, 5);
+            leftTiles.push({ tile, img });
+          } catch (err) {
+            console.error(`Failed to redraw left tile ${tile.x},${tile.y}:`, err);
+          }
+        }
+
+        for (const tile of rightPageData.tiles) {
+          try {
+            const img = await tileLoader.loadTile(tile, 5);
+            rightTiles.push({ tile, img });
+          } catch (err) {
+            console.error(`Failed to redraw right tile ${tile.x},${tile.y}:`, err);
+          }
+        }
+
+        // 見開きを描画
+        renderer.renderSpread(leftPageData, rightPageData, leftTiles, rightTiles);
+        return;
+      }
+    }
+
+    // 単ページモード
+    if (!currentPageData) return;
 
     // すべてのタイルを再描画
     for (const tile of currentPageData.tiles) {

@@ -30,7 +30,7 @@ export class TouchHandler {
   private swipeStartY = 0;
   private swipeThreshold = 50; // px
   private swipeMaxVertical = 100; // 縦方向の許容範囲
-  private panThreshold = 10; // パンとみなす移動量の閾値（px）
+  private panThreshold = 30; // パンとみなす移動量の閾値（px）- スワイプとパンを区別
 
   // ダブルタップ用
   private lastTapTime = 0;
@@ -109,7 +109,7 @@ export class TouchHandler {
       const deltaX = touch.clientX - this.lastTouchX;
       const deltaY = touch.clientY - this.lastTouchY;
 
-      // 移動量がpanThresholdを超えたらパンとみなす
+      // 移動量がpanThresholdを超えたらパンとみなす（スワイプ無効化）
       const totalDeltaX = Math.abs(touch.clientX - this.swipeStartX);
       const totalDeltaY = Math.abs(touch.clientY - this.swipeStartY);
 
@@ -184,7 +184,7 @@ export class TouchHandler {
     const deltaX = e.clientX - this.lastTouchX;
     const deltaY = e.clientY - this.lastTouchY;
 
-    // 移動量がpanThresholdを超えたらパンとみなす
+    // 移動量がpanThresholdを超えたらパンとみなす（スワイプ無効化）
     const totalDeltaX = Math.abs(e.clientX - this.swipeStartX);
     const totalDeltaY = Math.abs(e.clientY - this.swipeStartY);
 

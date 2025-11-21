@@ -324,16 +324,21 @@ export class CanvasRenderer {
    * ズーム設定
    */
   setScale(scale: number): void {
-    this.scale = Math.max(0.5, Math.min(5, scale));
+    this.scale = Math.max(1, Math.min(5, scale));
   }
 
   /**
    * パン設定
    */
   setPan(x: number, y: number): void {
-    // パン範囲を制限（画像が画面外に行きすぎないように）
-    const maxX = Math.max(0, (this.pageWidth * this.scale - this.pageWidth) / 2);
-    const maxY = Math.max(0, (this.pageHeight * this.scale - this.pageHeight) / 2);
+    // ズーム時の実際の画像サイズに基づいて移動範囲を計算
+    // 拡大後の画像サイズを取得
+    const scaledWidth = this.pageWidth * this.scale;
+    const scaledHeight = this.pageHeight * this.scale;
+
+    // 拡大後の画像サイズの2倍まで移動可能
+    const maxX = scaledWidth * 2;
+    const maxY = scaledHeight * 2;
 
     this.translateX = Math.max(-maxX, Math.min(maxX, x));
     this.translateY = Math.max(-maxY, Math.min(maxY, y));
