@@ -8,15 +8,14 @@ export function useTouchGestures(
   containerElement: HTMLDivElement | null,
   renderer: CanvasRenderer | null,
   onNextPage: () => void,
-  onPrevPage: () => void,
-  onRedraw: () => Promise<void>
+  onPrevPage: () => void
 ) {
   let touchHandler = $state<TouchHandler | null>(null);
 
   /**
    * パン処理（等倍時は無効、ズーム時のみ有効）
    */
-  async function handlePan(deltaX: number, deltaY: number): Promise<void> {
+  function handlePan(deltaX: number, deltaY: number): void {
     if (!renderer) return;
 
     // 等倍時はパン無効（スワイプのみ）
@@ -24,19 +23,15 @@ export function useTouchGestures(
     if (currentScale <= 1) return;
 
     renderer.pan(deltaX, deltaY);
-
-    await onRedraw();
   }
 
   /**
    * ダブルタップ処理（リセット）
    */
-  async function handleDoubleTap(): Promise<void> {
+  function handleDoubleTap(): void {
     if (!renderer) return;
 
     renderer.resetTransform();
-
-    await onRedraw();
   }
 
   /**

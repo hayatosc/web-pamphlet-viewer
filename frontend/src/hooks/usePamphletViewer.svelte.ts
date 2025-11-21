@@ -225,66 +225,120 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   function prefetchAdjacentPages(currentPageNum: number): void {
     if (!metadata || !tileLoader || !renderer) return;
 
-    // プリフェッチ対象: 前後1ページ（見開きモードの場合は前後の見開き）
-    const pagesToPrefetch = isSpreadMode
-      ? [currentPageNum - 2, currentPageNum - 1, currentPageNum + 1, currentPageNum + 2]
-      : [currentPageNum - 1, currentPageNum + 1];
+    if (isSpreadMode) {
+      // 見開きモード: 前後の見開きをプリフェッチ
+      const currentSpreadInfo = getSpreadForPage(currentPageNum);
 
-    pagesToPrefetch.forEach((pageNum) => {
-      // 範囲チェック
-      if (pageNum < 0 || pageNum >= totalPagesCount) return;
-
-      // すでにCanvasキャッシュされているかチェック
-      const cacheStats = renderer!.getCacheStats();
-      if (cacheStats.pages.includes(pageNum)) {
-        console.log(`[prefetch] Page ${pageNum} already cached, skipping`);
-        return;
+      // 前の見開き
+      if (currentSpreadInfo.leftPage !== null && currentSpreadInfo.leftPage >= 2) {
+        const prevLeftPage = currentSpreadInfo.leftPage - 2;
+        const prevRightPage = currentSpreadInfo.leftPage - 1;
+        prefetchPages([prevLeftPage, prevRightPage]);
+      } else if (currentSpreadInfo.leftPage === 1) {
+        // 表紙（ページ0）をプリフェッチ
+        prefetchPages([0]);
       }
 
-      // メタデータが取得済みかチェック
-      const pageData = metadata!.pages.find((p) => p.page === pageNum);
-      if (!pageData) {
-        console.log(`[prefetch] Page ${pageNum} metadata not loaded yet, skipping`);
-        return;
+      // 次の見開き
+      if (currentSpreadInfo.rightPage !== null && currentSpreadInfo.rightPage < totalPagesCount - 2) {
+        const nextLeftPage = currentSpreadInfo.rightPage + 1;
+        const nextRightPage = currentSpreadInfo.rightPage + 2;
+        prefetchPages([nextLeftPage, nextRightPage]);
+      } else if (currentSpreadInfo.rightPage === totalPagesCount - 2) {
+        // 裏表紙（最終ページ）をプリフェッチ
+        prefetchPages([totalPagesCount - 1]);
       }
+    } else {
+      // 単ページモード: 前後1ページをプリフェッチ
+      if (currentPageNum - 1 >= 0) {
+        prefetchPages([currentPageNum - 1]);
+      }
+      if (currentPageNum + 1 < totalPagesCount) {
+        prefetchPages([currentPageNum + 1]);
+      }
+    }
+  }
 
-      // バックグラウンドでタイルをプリフェッチ（低優先度: 1）
-      console.log(`[prefetch] Prefetching page ${pageNum} (${pageData.tiles.length} tiles)`);
-      (async () => {
-        try {
-          const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = await Promise.all(
+  /**
+   * ページをプリフェッチ（単ページまたは見開き）
+   * @param pages - プリフェッチするページ番号の配列（1ページまたは2ページ）
+   */
+  function prefetchPages(pages: number[]): void {
+    if (!metadata || !tileLoader || !renderer) return;
+    if (pages.length === 0) return;
+
+    // キャッシュキーを計算（単ページ: そのまま、見開き: 負の値）
+    const cacheKey = pages.length === 1 ? pages[0] : -(pages[0] + 1);
+
+    // すでにキャッシュされているかチェック
+    const cacheStats = renderer.getCacheStats();
+    if (cacheStats.pages.includes(cacheKey)) {
+      console.log(`[prefetch] Pages [${pages.join(', ')}] already cached, skipping`);
+      return;
+    }
+
+    // メタデータが取得済みかチェック
+    const pagesData = pages
+      .map((pageNum) => metadata!.pages.find((p) => p.page === pageNum))
+      .filter((p): p is Page => p !== undefined);
+
+    if (pagesData.length !== pages.length) {
+      console.log(`[prefetch] Pages [${pages.join(', ')}] metadata not loaded yet, skipping`);
+      return;
+    }
+
+    // バックグラウンドでタイルをプリフェッチ（低優先度: 1）
+    const totalTiles = pagesData.reduce((sum, page) => sum + page.tiles.length, 0);
+    console.log(`[prefetch] Prefetching pages [${pages.join(', ')}] (${totalTiles} tiles)`);
+
+    (async () => {
+      try {
+        // すべてのページのタイルを並列でプリフェッチ
+        const allTiles = await Promise.all(
+          pagesData.flatMap((pageData, pageIndex) =>
             pageData.tiles.map(async (tile) => ({
               tile,
               img: await tileLoader!.loadTile(tile, 1), // 低優先度
+              pageIndex,
             }))
-          );
+          )
+        );
 
-          // プリフェッチしたページをCanvasキャッシュに保存
-          // 一時的なOffscreenCanvasを使用
-          const offscreen = new OffscreenCanvas(pageData.width, pageData.height);
-          const ctx = offscreen.getContext('2d');
-          if (!ctx) return;
+        // Canvasサイズを計算
+        const canvasWidth =
+          pagesData.length === 1
+            ? pagesData[0].width
+            : pagesData.reduce((sum, page) => sum + page.width, 0);
+        const canvasHeight = Math.max(...pagesData.map((page) => page.height));
 
-          // 背景
-          ctx.fillStyle = '#f9fafb';
-          ctx.fillRect(0, 0, pageData.width, pageData.height);
+        // OffscreenCanvasに描画
+        const offscreen = new OffscreenCanvas(canvasWidth, canvasHeight);
+        const ctx = offscreen.getContext('2d');
+        if (!ctx) return;
 
-          // タイル描画
-          const tileSize = metadata!.tile_size;
-          for (const { tile, img } of tiles) {
-            const x = tile.x * tileSize;
-            const y = tile.y * tileSize;
-            ctx.drawImage(img, x, y, tileSize, tileSize);
-          }
+        // 背景
+        ctx.fillStyle = '#f9fafb';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-          // ページキャッシュに保存
-          renderer!['pageCache'].set(pageNum, offscreen);
-          console.log(`[prefetch] Page ${pageNum} cached successfully`);
-        } catch (err) {
-          console.error(`[prefetch] Failed to prefetch page ${pageNum}:`, err);
+        // タイル描画
+        const tileSize = metadata!.tile_size;
+        let xOffset = 0;
+
+        for (const { tile, img, pageIndex } of allTiles) {
+          // ページごとのxオフセットを計算
+          const pageXOffset = pagesData.slice(0, pageIndex).reduce((sum, page) => sum + page.width, 0);
+          const x = pageXOffset + tile.x * tileSize;
+          const y = tile.y * tileSize;
+          ctx.drawImage(img, x, y, tileSize, tileSize);
         }
-      })();
-    });
+
+        // キャッシュに保存
+        renderer!['pageCache'].set(cacheKey, offscreen);
+        console.log(`[prefetch] Pages [${pages.join(', ')}] cached successfully`);
+      } catch (err) {
+        console.error(`[prefetch] Failed to prefetch pages [${pages.join(', ')}]:`, err);
+      }
+    })();
   }
 
   /**
@@ -298,123 +352,66 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
       renderer = new CanvasRenderer(canvasElement, metadata.tile_size, 5); // キャッシュサイズ5
     }
 
-    // 見開きモードかチェック
+    // 表示するページを決定（見開きモードかどうか）
     const spread = currentSpread;
+    let pagesData: Page[];
 
     if (isSpreadMode && spread.leftPage !== null && spread.rightPage !== null) {
-      // 見開きモード: 2ページ分を描画
+      // 見開きモード: 2ページ分
       const leftPageData = metadata.pages.find((p) => p.page === spread.leftPage);
       const rightPageData = metadata.pages.find((p) => p.page === spread.rightPage);
 
-      if (leftPageData && rightPageData) {
-        await loadSpreadTiles(leftPageData, rightPageData);
-        prefetchAdjacentPages(currentPage);
-        return;
-      }
+      if (!leftPageData || !rightPageData) return;
+      pagesData = [leftPageData, rightPageData];
+    } else {
+      // 単ページモード
+      pagesData = [pageData];
     }
 
-    // 単ページモード（または表紙・裏表紙）
+    // キャッシュキーを計算
+    const cacheKey = pagesData.length === 1 ? pagesData[0].page : -(pagesData[0].page + 1);
+
     // キャッシュチェック: キャッシュされている場合は即座に表示
     const cacheStats = renderer.getCacheStats();
-    if (cacheStats.pages.includes(pageData.page)) {
-      console.log(`[usePamphletViewer] Page ${pageData.page} is cached, rendering immediately`);
+    if (cacheStats.pages.includes(cacheKey)) {
+      const pageLabels = pagesData.map((p) => p.page).join(', ');
+      console.log(`[usePamphletViewer] Pages [${pageLabels}] cached, rendering immediately`);
 
       // loading状態をfalseに設定（即座に表示）
       loading = false;
 
-      // タイルの再取得は不要、Canvasキャッシュから直接描画
-      // 空の配列を渡すことで、renderPageはキャッシュから復元する
-      renderer.renderPage(pageData.page, pageData.width, pageData.height, []);
+      // キャッシュから即座に描画
+      if (pagesData.length === 1) {
+        const page = pagesData[0];
+        renderer.renderPage(page.page, page.width, page.height, []);
+      } else {
+        const [leftPage, rightPage] = pagesData;
+        renderer.renderSpread(leftPage, rightPage, [], []);
+      }
 
       // プリフェッチ: 次のページを先読み
-      prefetchAdjacentPages(pageData.page);
+      prefetchAdjacentPages(currentPage);
       return;
     }
 
     // キャッシュにない場合: タイルを読み込み
-    await loadPageTiles(pageData);
+    await loadPagesTiles(pagesData);
 
     // 読み込み完了後、隣接ページをプリフェッチ
-    prefetchAdjacentPages(pageData.page);
+    prefetchAdjacentPages(currentPage);
   }
 
   /**
-   * ページのタイルを読み込み（初回描画用）
+   * ページのタイルを読み込み（単ページまたは見開き）
+   * @param pagesData - 読み込むページデータの配列（1ページまたは2ページ）
    */
-  async function loadPageTiles(pageData: Page): Promise<void> {
-    if (!renderer || !tileLoader) return;
-
-    // 前のページの描画をキャンセル（タイルダウンロードは続行してキャッシュに保存）
-    if (abortController) {
-      abortController.abort();
-      console.log('[usePamphletViewer] Previous page rendering cancelled');
-    }
-
-    // 新しいAbortControllerを作成
-    abortController = new AbortController();
-    const signal = abortController.signal;
-
-    loading = true;
-    loadingTiles = 0;
-    totalTiles = pageData.tiles.length;
-
-    try {
-      // すべてのタイルを並列で読み込み
-      const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
-
-      for (const tile of pageData.tiles) {
-        // キャンセルチェック
-        if (signal.aborted) {
-          console.log('[usePamphletViewer] Tile loading aborted');
-          return;
-        }
-
-        try {
-          const img = await tileLoader.loadTile(tile, 10); // 優先度10
-          tiles.push({ tile, img });
-          loadingTiles++;
-        } catch (err) {
-          if (signal.aborted) return;
-          console.error(`Failed to load tile ${tile.x},${tile.y}:`, err);
-        }
-      }
-
-      // キャンセルチェック（描画前）
-      if (signal.aborted) {
-        console.log('[usePamphletViewer] Rendering aborted before draw');
-        return;
-      }
-
-      // すべてのタイルが読み込まれたらページを描画（キャッシュに保存）
-      renderer.renderPage(pageData.page, pageData.width, pageData.height, tiles);
-
-      console.log(`[usePamphletViewer] Page ${pageData.page} rendered and cached`);
-    } catch (err) {
-      // キャンセルによる中断は正常なので、エラーログを出さない
-      if (signal.aborted) {
-        console.log('Page tile loading cancelled');
-        return;
-      }
-      console.error('Failed to load tiles:', err);
-      error = 'Failed to load page tiles';
-    } finally {
-      // キャンセルされていない場合のみloadingをfalseにする
-      if (!signal.aborted) {
-        loading = false;
-      }
-    }
-  }
-
-  /**
-   * 見開きのタイルを読み込み（2ページ分）
-   */
-  async function loadSpreadTiles(leftPageData: Page, rightPageData: Page): Promise<void> {
-    if (!renderer || !tileLoader) return;
+  async function loadPagesTiles(pagesData: Page[]): Promise<void> {
+    if (!renderer || !tileLoader || pagesData.length === 0) return;
 
     // 前のページの描画をキャンセル
     if (abortController) {
       abortController.abort();
-      console.log('[usePamphletViewer] Previous spread rendering cancelled');
+      console.log('[usePamphletViewer] Previous rendering cancelled');
     }
 
     // 新しいAbortControllerを作成
@@ -423,64 +420,62 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
 
     loading = true;
     loadingTiles = 0;
-    totalTiles = leftPageData.tiles.length + rightPageData.tiles.length;
+    totalTiles = pagesData.reduce((sum, page) => sum + page.tiles.length, 0);
 
     try {
-      // 左右のページのタイルを並列で読み込み
-      const leftTiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
-      const rightTiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
+      // すべてのページのタイルを並列で読み込み（高優先度: 10）
+      const allTilePromises = pagesData.flatMap((pageData, pageIndex) =>
+        pageData.tiles.map(async (tile) => {
+          if (signal.aborted) return null;
+          try {
+            const img = await tileLoader.loadTile(tile, 10); // 高優先度
+            loadingTiles++;
+            return { tile, img, pageIndex };
+          } catch (err) {
+            if (!signal.aborted) {
+              console.error(`Failed to load tile ${tile.x},${tile.y} from page ${pageData.page}:`, err);
+            }
+            return null;
+          }
+        })
+      );
 
-      // 左ページのタイル読み込み
-      for (const tile of leftPageData.tiles) {
-        if (signal.aborted) {
-          console.log('[usePamphletViewer] Spread tile loading aborted');
-          return;
-        }
+      // すべてのタイルを並列で読み込み
+      const allTiles = await Promise.all(allTilePromises);
 
-        try {
-          const img = await tileLoader.loadTile(tile, 10);
-          leftTiles.push({ tile, img });
-          loadingTiles++;
-        } catch (err) {
-          if (signal.aborted) return;
-          console.error(`Failed to load left tile ${tile.x},${tile.y}:`, err);
-        }
-      }
-
-      // 右ページのタイル読み込み
-      for (const tile of rightPageData.tiles) {
-        if (signal.aborted) {
-          console.log('[usePamphletViewer] Spread tile loading aborted');
-          return;
-        }
-
-        try {
-          const img = await tileLoader.loadTile(tile, 10);
-          rightTiles.push({ tile, img });
-          loadingTiles++;
-        } catch (err) {
-          if (signal.aborted) return;
-          console.error(`Failed to load right tile ${tile.x},${tile.y}:`, err);
-        }
-      }
-
-      // キャンセルチェック（描画前）
+      // キャンセルチェック
       if (signal.aborted) {
-        console.log('[usePamphletViewer] Spread rendering aborted before draw');
+        console.log('[usePamphletViewer] Rendering aborted');
         return;
       }
 
-      // 見開きを描画
-      renderer.renderSpread(leftPageData, rightPageData, leftTiles, rightTiles);
+      // ページごとに振り分け
+      const tilesPerPage = pagesData.map(() => [] as Array<{ tile: Tile; img: HTMLImageElement }>);
+      allTiles.forEach((result) => {
+        if (result) {
+          tilesPerPage[result.pageIndex].push({ tile: result.tile, img: result.img });
+        }
+      });
 
-      console.log(`[usePamphletViewer] Spread (${leftPageData.page}, ${rightPageData.page}) rendered`);
+      // 描画
+      if (pagesData.length === 1) {
+        // 単ページモード
+        const pageData = pagesData[0];
+        renderer.renderPage(pageData.page, pageData.width, pageData.height, tilesPerPage[0]);
+        console.log(`[usePamphletViewer] Page ${pageData.page} rendered and cached`);
+      } else if (pagesData.length === 2) {
+        // 見開きモード
+        const [leftPage, rightPage] = pagesData;
+        renderer.renderSpread(leftPage, rightPage, tilesPerPage[0], tilesPerPage[1]);
+        console.log(`[usePamphletViewer] Spread (${leftPage.page}, ${rightPage.page}) rendered and cached`);
+      }
     } catch (err) {
       if (signal.aborted) {
-        console.log('Spread tile loading cancelled');
+        console.log('Tile loading cancelled');
         return;
       }
-      console.error('Failed to load spread tiles:', err);
-      error = 'Failed to load spread tiles';
+      console.error('Failed to load tiles:', err);
+      error = 'Failed to load tiles';
     } finally {
       if (!signal.aborted) {
         loading = false;

@@ -51,6 +51,9 @@ export class CanvasRenderer {
     this.translateX = 0;
     this.translateY = 0;
 
+    // CSS transformを更新
+    this.applyTransform();
+
     // 背景をクリア
     this.clear();
   }
@@ -219,8 +222,23 @@ export class CanvasRenderer {
     // transformをリセット
     this.resetTransform();
 
+    // 見開き用のキャッシュキー（負の値で見開きを識別: -leftPage-1）
+    const spreadCacheKey = -(leftPageData.page + 1);
+
+    // キャッシュチェック
+    const cached = this.pageCache.get(spreadCacheKey);
+    if (cached) {
+      console.log(`[CanvasRenderer] Spread (${leftPageData.page}, ${rightPageData.page}) restored from cache`);
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.scale(this.dpr, this.dpr);
+      this.ctx.drawImage(cached, 0, 0);
+      this.ctx.restore();
+      return;
+    }
+
     // OffscreenCanvasに見開きを描画
-    console.log(`[CanvasRenderer] Rendering spread (${leftPageData.page}, ${rightPageData.page})`);
+    console.log(`[CanvasRenderer] Rendering spread (${leftPageData.page}, ${rightPageData.page}) to cache`);
     const offscreen = new OffscreenCanvas(spreadWidth, spreadHeight);
     const offscreenCtx = offscreen.getContext('2d');
 
@@ -255,7 +273,10 @@ export class CanvasRenderer {
       }
     }
 
-    // メインCanvasに転送
+    // キャッシュに保存
+    this.pageCache.set(spreadCacheKey, offscreen);
+
+    // メインCanvasに転送（1回のdrawImage）
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(this.dpr, this.dpr);
@@ -264,13 +285,15 @@ export class CanvasRenderer {
   }
 
   /**
-   * transformを適用
+   * transformを適用（Canvas要素自体にCSS transformを適用）
    */
   private applyTransform(): void {
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.scale(this.dpr, this.dpr);
-    this.ctx.translate(this.translateX, this.translateY);
-    this.ctx.scale(this.scale, this.scale);
+    // Canvas要素自体にCSS transformを適用（枠ごと動く）
+    // translateとscaleの順序: translate → scale
+    const transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+    this.canvas.style.transform = transform;
+    // Canvas要素の中心を基準にズーム
+    this.canvas.style.transformOrigin = '50% 50%';
   }
 
   /**
@@ -282,7 +305,9 @@ export class CanvasRenderer {
 
     try {
       this.ctx.save();
-      this.applyTransform();
+      // Canvas内部の描画はdpr補正のみ（transformはCSS側で適用）
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.scale(this.dpr, this.dpr);
       this.ctx.drawImage(img, x, y, this.tileSize, this.tileSize);
       this.ctx.restore();
     } catch (err) {
@@ -307,14 +332,16 @@ export class CanvasRenderer {
     const y = tile.y * this.tileSize;
 
     this.ctx.save();
-    this.applyTransform();
+    // Canvas内部の描画はdpr補正のみ
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(this.dpr, this.dpr);
 
     this.ctx.fillStyle = '#e5e7eb';
     this.ctx.fillRect(x, y, this.tileSize, this.tileSize);
 
     // 枠線
     this.ctx.strokeStyle = '#d1d5db';
-    this.ctx.lineWidth = 1 / this.scale; // スケールに応じて線幅を調整
+    this.ctx.lineWidth = 1;
     this.ctx.strokeRect(x, y, this.tileSize, this.tileSize);
 
     this.ctx.restore();
@@ -322,9 +349,21 @@ export class CanvasRenderer {
 
   /**
    * ズーム設定
+   * @param scale - 新しいスケール値
    */
   setScale(scale: number): void {
-    this.scale = Math.max(1, Math.min(5, scale));
+    const newScale = Math.max(1, Math.min(5, scale));
+
+    // ズームが1倍に戻った場合、パン位置もリセット
+    if (newScale === 1 && this.scale !== 1) {
+      this.translateX = 0;
+      this.translateY = 0;
+    }
+
+    this.scale = newScale;
+
+    // CSS transformを更新
+    this.applyTransform();
   }
 
   /**
@@ -342,6 +381,9 @@ export class CanvasRenderer {
 
     this.translateX = Math.max(-maxX, Math.min(maxX, x));
     this.translateY = Math.max(-maxY, Math.min(maxY, y));
+
+    // CSS transformを更新
+    this.applyTransform();
   }
 
   /**
@@ -358,6 +400,9 @@ export class CanvasRenderer {
     this.scale = 1;
     this.translateX = 0;
     this.translateY = 0;
+
+    // CSS transformを更新
+    this.applyTransform();
   }
 
   /**

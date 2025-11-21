@@ -56,7 +56,6 @@
     const newScale = Math.min(scale + 0.2, 5); // 最大5倍
     viewer.renderer.setScale(newScale);
     currentScale = newScale;
-    viewer.redrawCurrentPage();
   }
 
   /**
@@ -69,7 +68,6 @@
     const newScale = Math.max(scale - 0.2, 1); // 最小1倍
     viewer.renderer.setScale(newScale);
     currentScale = newScale;
-    viewer.redrawCurrentPage();
   }
 
   // 初期化
@@ -128,8 +126,7 @@
         containerElement,
         viewer.renderer,
         () => canvasElement && viewer.nextPage(canvasElement),
-        () => canvasElement && viewer.prevPage(canvasElement),
-        () => viewer.redrawCurrentPage()
+        () => canvasElement && viewer.prevPage(canvasElement)
       );
       gestures.initialize();
       touchGestures = gestures;
