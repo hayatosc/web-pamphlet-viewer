@@ -14,7 +14,7 @@
 <div
   bind:this={containerElement}
   class="flex-1 relative overflow-hidden"
-  style="touch-action: none; -webkit-user-select: none; user-select: none;"
+  style="-webkit-user-select: none; user-select: none;"
 >
   <div class="absolute inset-0 flex items-center justify-center p-4">
     <canvas

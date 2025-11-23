@@ -9,7 +9,7 @@ export interface TouchState {
 }
 
 export interface TouchHandlerCallbacks {
-  onPan?: (deltaX: number, deltaY: number) => void;
+  onPan?: (deltaX: number, deltaY: number) => boolean;
   onSwipeLeft?: () => void;
   onSwipeRight?: () => void;
   onDoubleTap?: () => void;
@@ -109,17 +109,40 @@ export class TouchHandler {
       const deltaX = touch.clientX - this.lastTouchX;
       const deltaY = touch.clientY - this.lastTouchY;
 
-      // 移動量がpanThresholdを超えたらパンとみなす（スワイプ無効化）
+      // onPanを実行し、処理されたかどうかを取得
+      // デフォルトはtrue（処理された）とみなす
+      let isPanHandled = true;
+      if (this.callbacks.onPan) {
+        // 戻り値が明示的にfalseの場合のみfalseとする
+        const result = this.callbacks.onPan(deltaX, deltaY);
+        if (result === false) {
+          isPanHandled = false;
+        }
+      }
+
       const totalDeltaX = Math.abs(touch.clientX - this.swipeStartX);
       const totalDeltaY = Math.abs(touch.clientY - this.swipeStartY);
 
-      if (!this.hasMoved && (totalDeltaX > this.panThreshold || totalDeltaY > this.panThreshold)) {
-        this.hasMoved = true;
-      }
+      if (isPanHandled) {
+        // パン処理された場合（拡大時など）
+        if (e.cancelable) e.preventDefault();
 
-      // ドラッグ/パン（常時有効）
-      e.preventDefault();
-      this.callbacks.onPan?.(deltaX, deltaY);
+        // 移動量がpanThresholdを超えたらパンとみなす（スワイプ無効化）
+        if (!this.hasMoved && (totalDeltaX > this.panThreshold || totalDeltaY > this.panThreshold)) {
+          this.hasMoved = true;
+        }
+      } else {
+        // パン処理されなかった場合（等倍時など）
+
+        // 横移動が優位な場合は、ページ送りのために preventDefault する
+        // 縦移動が優位な場合は、ブラウザのスクロールを許可する（preventDefaultしない）
+        if (totalDeltaX > totalDeltaY && totalDeltaX > 10) {
+          if (e.cancelable) e.preventDefault();
+        } else if (totalDeltaY > totalDeltaX && totalDeltaY > 10) {
+          // 縦スクロールとみなす -> スワイプ判定無効化
+          this.hasMoved = true;
+        }
+      }
 
       this.lastTouchX = touch.clientX;
       this.lastTouchY = touch.clientY;

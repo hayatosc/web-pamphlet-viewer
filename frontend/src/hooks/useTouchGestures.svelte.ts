@@ -15,14 +15,15 @@ export function useTouchGestures(
   /**
    * パン処理（等倍時は無効、ズーム時のみ有効）
    */
-  function handlePan(deltaX: number, deltaY: number): void {
-    if (!renderer) return;
+  function handlePan(deltaX: number, deltaY: number): boolean {
+    if (!renderer) return false;
 
     // 等倍時はパン無効（スワイプのみ）
     const currentScale = renderer.getScale();
-    if (currentScale <= 1) return;
+    if (currentScale <= 1) return false;
 
     renderer.pan(deltaX, deltaY);
+    return true;
   }
 
   /**
