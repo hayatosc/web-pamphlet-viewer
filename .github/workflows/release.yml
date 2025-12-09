@@ -35,7 +35,7 @@ jobs:
 
       - name: Generate asset manifest
         run: |
-          node -e "const fs=require('fs'); const path='frontend/dist'; const files=fs.readdirSync(path); const js=files.find(f=>/^pamphlet-viewer-.*\\.js$/.test(f)); const css=files.find(f=>/^pamphlet-viewer-.*\\.css$/.test(f)); if(!js||!css){throw new Error('JS/CSS assets not found');} fs.writeFileSync(`${path}/manifest.json`, JSON.stringify({ js, css }, null, 2));"
+          node -e "const fs=require('fs'); const path='frontend/dist'; const files=fs.readdirSync(path); const js=files.find(f=>/^pamphlet-viewer-.*\\.js$/.test(f)); const css=files.find(f=>/^pamphlet-viewer-.*\\.css$/.test(f)); if(!js||!css){throw new Error('JS/CSS assets not found');} fs.writeFileSync(\`\${path}/manifest.json\`, JSON.stringify({ js, css }, null, 2));"
 
       - name: Upload release assets
         if: github.event_name == 'release'
