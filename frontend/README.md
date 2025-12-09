@@ -53,9 +53,30 @@ pnpm build
 ```
 
 ビルド成果物は `dist/` に出力されます：
-- `pamphlet-viewer.js` - ESM形式
-- `pamphlet-viewer.umd.cjs` - UMD形式
-- `pamphlet-viewer.css` - スタイル
+- `pamphlet-viewer-<hash>.js` - ESM形式（コンテンツハッシュ付き）
+- `pamphlet-viewer-<hash>.css` - スタイル（コンテンツハッシュ付き）
+- `manifest.json` - 上記ファイル名を示すマニフェスト
+
+GitHub Releaseにそのまま添付して配布することを想定しています。ブラウザキャッシュを確実に更新するため、JS/CSSにはコンテンツハッシュを付与しています。`latest` リリースにアップロードした場合でも、安定したURLは `manifest.json` です。このマニフェストを取得し、記載されたハッシュ付きファイルを読み込むようにしてください：
+
+```html
+<script type="module">
+  const base = 'https://github.com/OWNER/web-pamphlet-viewer/releases/latest/download/';
+
+  const manifest = await fetch(`${base}manifest.json`).then((res) => res.json());
+
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = `${base}${manifest.css}`;
+  document.head.appendChild(css);
+
+  await import(`${base}${manifest.js}`);
+</script>
+```
+
+`OWNER` はリポジトリの所有者に置き換えてください。特定のタグで固定する場合は `latest` の部分を `v1.2.3` などのタグ名に変更するだけで済み、手元へのコピー作業は不要です。マニフェストは常に固定名なので、キャッシュ更新の心配なくハッシュ付きの最新アセットを読み込めます。
+
+リリース資産は `.github/workflows/release.yml` のGitHub Actionsでビルドされます。`main` ブランチへのプッシュでビルドを常に検証しつつ、GitHub Releaseの公開時にもワークフローが走り、そのタイミングで生成されたJS/CSSと`manifest.json`をRelease Assetsに添付します。
 
 ### 型チェック
 
