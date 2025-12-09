@@ -1,0 +1,52 @@
+name: Release frontend assets
+
+on:
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-upload:
+    name: Build and upload web component
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web component
+        run: pnpm -C frontend build
+
+      - name: Generate asset manifest
+        run: |
+          node -e "const fs=require('fs'); const path='frontend/dist'; const files=fs.readdirSync(path); const js=files.find(f=>/^pamphlet-viewer-.*\\.js$/.test(f)); const css=files.find(f=>/^pamphlet-viewer-.*\\.css$/.test(f)); if(!js||!css){throw new Error('JS/CSS assets not found');} fs.writeFileSync(`${path}/pamphlet-viewer-assets.json`, JSON.stringify({ js, css }, null, 2));"
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            frontend/dist/pamphlet-viewer-*.js
+            frontend/dist/pamphlet-viewer-*.css
+            frontend/dist/pamphlet-viewer-assets.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
