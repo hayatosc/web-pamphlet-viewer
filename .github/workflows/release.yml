@@ -37,10 +37,31 @@ jobs:
         run: |
           node -e "const fs=require('fs'); const path='frontend/dist'; const files=fs.readdirSync(path); const js=files.find(f=>/^pamphlet-viewer-.*\\.js$/.test(f)); const css=files.find(f=>/^pamphlet-viewer-.*\\.css$/.test(f)); if(!js||!css){throw new Error('JS/CSS assets not found');} fs.writeFileSync(\`\${path}/manifest.json\`, JSON.stringify({ js, css }, null, 2));"
 
-      - name: Upload release assets
-        if: github.event_name == 'release'
+      - name: Get version from package.json
+        id: package-version
+        run: |
+          VERSION=$(node -p "require('./frontend/package.json').version")
+          TAG_NAME="v${VERSION}-build.${{ github.run_number }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.package-version.outputs.tag }}"
+          git push origin "${{ steps.package-version.outputs.tag }}"
+
+      - name: Create release with assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.package-version.outputs.tag }}
+          name: Release ${{ steps.package-version.outputs.tag }}
+          body: |
+            Automated release from main branch
+
+            **Build:** #${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
           files: |
             frontend/dist/pamphlet-viewer-*.js
             frontend/dist/pamphlet-viewer-*.css
