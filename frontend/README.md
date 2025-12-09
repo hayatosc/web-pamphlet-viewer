@@ -76,7 +76,7 @@ GitHub Releaseにそのまま添付して配布することを想定していま
 
 `OWNER` はリポジトリの所有者に置き換えてください。特定のタグで固定する場合は `latest` の部分を `v1.2.3` などのタグ名に変更するだけで済み、手元へのコピー作業は不要です。マニフェストは常に固定名なので、キャッシュ更新の心配なくハッシュ付きの最新アセットを読み込めます。
 
-リリース資産は `.github/workflows/release.yml` のGitHub Actionsでビルドされます。`main` ブランチへのプッシュ時にジョブが実行され、ビルドの健全性を常に検証します。Releaseイベントで実行した場合のみ、生成されたJS/CSSと`manifest.json`をRelease Assetsに添付するステップも含まれています。
+リリース資産は `.github/workflows/release.yml` のGitHub Actionsでビルドされます。`main` ブランチへのプッシュでビルドを常に検証しつつ、GitHub Releaseの公開時にもワークフローが走り、そのタイミングで生成されたJS/CSSと`manifest.json`をRelease Assetsに添付します。
 
 ### 型チェック
 
