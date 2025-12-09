@@ -18,7 +18,7 @@ const assetManifestPlugin = () => ({
 
     fs.mkdirSync(distDir, { recursive: true });
     fs.writeFileSync(
-      path.join(distDir, 'pamphlet-viewer-assets.json'),
+      path.join(distDir, 'manifest.json'),
       JSON.stringify({ js: js.fileName, css: css.fileName }, null, 2)
     );
   }
