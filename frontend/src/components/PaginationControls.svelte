@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-svelte';
+  import ChevronLeft from 'lucide-svelte/icons/chevron-left';
+  import ChevronRight from 'lucide-svelte/icons/chevron-right';
+  import ZoomIn from 'lucide-svelte/icons/zoom-in';
+  import ZoomOut from 'lucide-svelte/icons/zoom-out';
 
   /**
    * ページネーションコントロール
@@ -29,6 +32,11 @@
   // ズームボタンのdisabled状態
   const canZoomOut = $derived(currentScale > 1);
   const canZoomIn = $derived(currentScale < 5);
+
+  const LeftIcon = ChevronLeft;
+  const RightIcon = ChevronRight;
+  const ZoomInIcon = ZoomIn;
+  const ZoomOutIcon = ZoomOut;
 </script>
 
 <div class="flex items-center justify-between gap-4 p-4 bg-white border-t border-gray-200">
@@ -43,7 +51,11 @@
       class="flex items-center justify-center px-4 py-3 min-w-11 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       aria-label="Previous page"
     >
-      <ChevronLeft size={20} />
+      {#if LeftIcon}
+        <LeftIcon size={20} />
+      {:else}
+        <span aria-hidden="true">←</span>
+      {/if}
     </button>
 
     <span class="text-sm md:text-base text-gray-600 whitespace-nowrap font-medium min-w-20 text-center tabular-nums">
@@ -56,7 +68,11 @@
       class="flex items-center justify-center px-4 py-3 min-w-11 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       aria-label="Next page"
     >
-      <ChevronRight size={20} />
+      {#if RightIcon}
+        <RightIcon size={20} />
+      {:else}
+        <span aria-hidden="true">→</span>
+      {/if}
     </button>
   </div>
 
@@ -68,7 +84,11 @@
       class="flex items-center justify-center p-3 min-w-11 bg-gray-500 text-white rounded-lg hover:bg-gray-600 active:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       aria-label="Zoom out"
     >
-      <ZoomOut size={20} />
+      {#if ZoomOutIcon}
+        <ZoomOutIcon size={20} />
+      {:else}
+        <span aria-hidden="true">－</span>
+      {/if}
     </button>
     <button
       onclick={onZoomIn}
@@ -76,7 +96,11 @@
       class="flex items-center justify-center p-3 min-w-11 bg-gray-500 text-white rounded-lg hover:bg-gray-600 active:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       aria-label="Zoom in"
     >
-      <ZoomIn size={20} />
+      {#if ZoomInIcon}
+        <ZoomInIcon size={20} />
+      {:else}
+        <span aria-hidden="true">＋</span>
+      {/if}
     </button>
   </div>
 </div>
