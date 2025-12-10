@@ -220,6 +220,52 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
+   * 指定ページの見開き情報を計算
+   */
+  function getSpreadForPage(pageNum: number): SpreadInfo {
+    if (!isSpreadMode || totalPages === 0) {
+      return {
+        leftPage: null,
+        rightPage: pageNum,
+        isCover: false,
+      };
+    }
+
+    if (pageNum === 0) {
+      return {
+        leftPage: null,
+        rightPage: 0,
+        isCover: true,
+      };
+    }
+
+    if (pageNum === totalPages - 1) {
+      return {
+        leftPage: totalPages - 1,
+        rightPage: null,
+        isCover: true,
+      };
+    }
+
+    const isOddPage = pageNum % 2 === 1;
+    // 裏表紙の1つ前のページが見開きに含まれないようにする
+    if (isOddPage && pageNum + 1 >= totalPages - 1) {
+      // 奇数ページで、次のページが裏表紙になる場合は単独表示
+      return {
+        leftPage: pageNum,
+        rightPage: null,
+        isCover: false,
+      };
+    }
+
+    return {
+      leftPage: isOddPage ? pageNum : pageNum - 1,
+      rightPage: isOddPage ? pageNum + 1 : pageNum,
+      isCover: false,
+    };
+  }
+
+  /**
    * 隣接ページをプリフェッチ（バックグラウンド）
    */
   function prefetchAdjacentPages(currentPageNum: number): void {
